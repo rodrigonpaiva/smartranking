@@ -2,14 +2,13 @@ import { Body, Controller, Delete, Get, Post, Query } from '@nestjs/common';
 import { CreatePlayerDto } from './dtos/create-player.dto';
 import { PlayersService } from './players.service';
 import { Player } from './interfaces/players.interface';
-import { UpdatePlayerDto } from './dtos/update-player.dto';
 
 @Controller('api/v1/players')
 export class PlayersController {
   constructor(private readonly playersService: PlayersService) {}
   @Post()
   async createPlayer(@Body() createPlayerDto: CreatePlayerDto) {
-    await this.playersService.createPlayer(createPlayerDto);
+    await this.playersService.createOrUpdatePlayer(createPlayerDto);
   }
 
   @Get()
@@ -18,7 +17,7 @@ export class PlayersController {
   }
 
   @Get()
-  async getPlayers(@Query('email') email: string): Promise<Player[] | Player> {
+  async getPlayers(@Query('email') email: string): Promise<Player | Player[]> {
     if (email) {
       return await this.playersService.getPlayerByEmail(email);
     } else {
@@ -26,8 +25,13 @@ export class PlayersController {
     }
   }
 
+  @Get()
+  async getPlayerByPhone(@Query('phone') phone: string): Promise<Player> {
+    return await this.playersService.getPlayerByPhone(phone);
+  }
+
   @Delete()
   async deletePlayer(@Query('email') email: string): Promise<void> {
-    this.playersService.deletePlayer(email);
+    await this.playersService.deletePlayer(email);
   }
 }
