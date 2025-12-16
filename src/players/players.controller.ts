@@ -1,10 +1,11 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
+  Param,
   Post,
+  Put,
   Query,
   UsePipes,
   ValidationPipe,
@@ -13,14 +14,17 @@ import { CreatePlayerDto } from './dtos/create-player.dto';
 import { PlayersService } from './players.service';
 import { Player } from './interfaces/players.interface';
 import { PlayersValidationParamPipe } from './pipes/players-validation-param.pipe';
+import { UpdatePlayerDto } from './dtos/update-player.dto';
 
 @Controller('api/v1/players')
 export class PlayersController {
   constructor(private readonly playersService: PlayersService) {}
   @Post()
   @UsePipes(ValidationPipe)
-  async createPlayer(@Body() createPlayerDto: CreatePlayerDto) {
-    await this.playersService.createOrUpdatePlayer(createPlayerDto);
+  async createPlayer(
+    @Body() createPlayerDto: CreatePlayerDto,
+  ): Promise<Player> {
+    return await this.playersService.createPlayer(createPlayerDto);
   }
 
   @Get()
@@ -30,28 +34,36 @@ export class PlayersController {
 
   @Get('by-email')
   async getPlayerByEmail(
-    @Query('email', PlayersValidationParamPipe) email: string,
+    @Param('email', PlayersValidationParamPipe) email: string,
   ): Promise<Player> {
-    if (email) {
-      return await this.playersService.getPlayerByEmail(email);
-    } else {
-      throw new BadRequestException('Email query parameter is required');
-    }
+    return await this.playersService.getPlayerById(email);
+  }
+
+  @Get('/:_id')
+  async getPlayerByid(
+    @Param('_id', PlayersValidationParamPipe) _id: string,
+  ): Promise<Player> {
+    return await this.playersService.getPlayerById(_id);
   }
 
   @Get('by-phone')
   async getPlayerByPhone(@Query('phone') phone: string): Promise<Player> {
-    if (phone) {
-      return await this.playersService.getPlayerByPhone(phone);
-    } else {
-      throw new BadRequestException('Phone query parameter is required');
-    }
+    return await this.playersService.getPlayerByPhone(phone);
   }
 
-  @Delete()
-  async deletePlayer(
-    @Query('email', PlayersValidationParamPipe) email: string,
+  @Put('/:_id')
+  @UsePipes(ValidationPipe)
+  async updatePlayer(
+    @Body() updatePlayer: UpdatePlayerDto,
+    @Param('_id', PlayersValidationParamPipe) _id: string,
   ): Promise<void> {
-    await this.playersService.deletePlayer(email);
+    await this.playersService.updatePlayer(_id, updatePlayer);
+  }
+
+  @Delete('/:_id')
+  async deletePlayer(
+    @Param('_id', PlayersValidationParamPipe) _id: string,
+  ): Promise<void> {
+    await this.playersService.deletePlayer(_id);
   }
 }
