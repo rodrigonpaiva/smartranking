@@ -13,6 +13,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         uri: configService.getOrThrow<string>('MONGODB_URI'),
+        dbName: configService.getOrThrow<string>('MONGODB_DB_NAME'),
       }),
     }),
     PlayersModule,

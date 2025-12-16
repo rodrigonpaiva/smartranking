@@ -24,19 +24,19 @@ export class PlayersService {
   }
 
   async getPlayerByEmail(email: string): Promise<Player> {
-    const playersFound = await this.playerModel.findOne({ email }).exec();
-    if (!playersFound) {
+    const playerFound = await this.playerModel.findOne({ email }).exec();
+    if (!playerFound) {
       throw new NotFoundException(`No players found with email: ${email}`);
     }
-    return playersFound;
+    return playerFound;
   }
 
   async getPlayerByPhone(phone: string): Promise<Player> {
-    const playersFound = await this.playerModel.findOne({ phone }).exec();
-    if (!playersFound) {
+    const playerFound = await this.playerModel.findOne({ phone }).exec();
+    if (!playerFound) {
       throw new NotFoundException(`No players found with phone: ${phone}`);
     }
-    return playersFound;
+    return playerFound;
   }
 
   private async create(createPlayerDto: CreatePlayerDto): Promise<Player> {
