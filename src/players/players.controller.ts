@@ -13,7 +13,7 @@ import {
 import { CreatePlayerDto } from './dtos/create-player.dto';
 import { PlayersService } from './players.service';
 import { Player } from './interfaces/players.interface';
-import { PlayersValidationParamPipe } from './pipes/players-validation-param.pipe';
+import { ValidationParamPipe } from '../common/pipes/validation-param.pipe';
 import { UpdatePlayerDto } from './dtos/update-player.dto';
 
 @Controller('api/v1/players')
@@ -34,14 +34,14 @@ export class PlayersController {
 
   @Get('by-email')
   async getPlayerByEmail(
-    @Param('email', PlayersValidationParamPipe) email: string,
+    @Param('email', ValidationParamPipe) email: string,
   ): Promise<Player> {
     return await this.playersService.getPlayerById(email);
   }
 
   @Get('/:_id')
   async getPlayerByid(
-    @Param('_id', PlayersValidationParamPipe) _id: string,
+    @Param('_id', ValidationParamPipe) _id: string,
   ): Promise<Player> {
     return await this.playersService.getPlayerById(_id);
   }
@@ -55,14 +55,14 @@ export class PlayersController {
   @UsePipes(ValidationPipe)
   async updatePlayer(
     @Body() updatePlayer: UpdatePlayerDto,
-    @Param('_id', PlayersValidationParamPipe) _id: string,
+    @Param('_id', ValidationParamPipe) _id: string,
   ): Promise<void> {
     await this.playersService.updatePlayer(_id, updatePlayer);
   }
 
   @Delete('/:_id')
   async deletePlayer(
-    @Param('_id', PlayersValidationParamPipe) _id: string,
+    @Param('_id', ValidationParamPipe) _id: string,
   ): Promise<void> {
     await this.playersService.deletePlayer(_id);
   }
