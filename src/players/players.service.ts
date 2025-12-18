@@ -59,6 +59,14 @@ export class PlayersService {
     return playerFound;
   }
 
+  async getPlayerByEmail(email: string): Promise<Player> {
+    const playerFound = await this.playerModel.findOne({ email }).exec();
+    if (!playerFound) {
+      throw new NotFoundException(`No players found with email: ${email}`);
+    }
+    return playerFound;
+  }
+
   async deletePlayer(_id: string): Promise<any> {
     const playersFound = await this.playerModel.findOne({ _id }).exec();
     if (playersFound) {

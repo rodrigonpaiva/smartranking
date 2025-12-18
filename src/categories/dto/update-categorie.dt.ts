@@ -8,5 +8,6 @@ export class UpdateCategoryDto {
 
   @IsArray()
   @ArrayMinSize(1)
+  @IsOptional()
   events: Array<Event>;
 }

@@ -8,6 +8,7 @@ import {
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
+import { ValidationParamPipe } from '../common/pipes/validation-param.pipe';
 import { CreateCategoryDto } from './dto/cretae-categorie.dto';
 import { CategoriesService } from './categories.service';
 import { Category } from './interfaces/category.interface';
@@ -46,7 +47,13 @@ export class CategoriesController {
   }
 
   @Post('/:category/players/:playerId')
-  async assignPlayerCategory(@Param() params: string[]): Promise<void> {
-    return await this.categoriesService.assignPlayerCategory(params);
+  async assignPlayerCategory(
+    @Param('category') category: string,
+    @Param('playerId', ValidationParamPipe) playerId: string,
+  ): Promise<void> {
+    return await this.categoriesService.assignPlayerCategory({
+      category,
+      playerId,
+    });
   }
 }

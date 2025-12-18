@@ -32,11 +32,11 @@ export class PlayersController {
     return await this.playersService.getAllPlayers();
   }
 
-  @Get('by-email')
+  @Get('by-email/:email')
   async getPlayerByEmail(
     @Param('email', ValidationParamPipe) email: string,
   ): Promise<Player> {
-    return await this.playersService.getPlayerById(email);
+    return await this.playersService.getPlayerByEmail(email);
   }
 
   @Get('/:_id')

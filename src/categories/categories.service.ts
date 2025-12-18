@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Category } from './interfaces/category.interface';
 import { CreateCategoryDto } from './dto/cretae-categorie.dto';
 import { InjectModel } from '@nestjs/mongoose';
@@ -45,6 +45,24 @@ export class CategoriesService {
     return categoryFound;
   }
 
+  async getCategoryByPlayer(playerId: string): Promise<Category> {
+    await this.playersService.getPlayerById(playerId);
+
+    const category = await this.categoryModel
+      .findOne()
+      .where('players')
+      .in([playerId])
+      .exec();
+
+    if (!category) {
+      throw new NotFoundException(
+        `No category found for player with id ${playerId}`,
+      );
+    }
+
+    return category;
+  }
+
   async updateCategory(
     category: string,
     updateCategoryDto: UpdateCategoryDto,
@@ -60,31 +78,50 @@ export class CategoriesService {
       .exec();
   }
 
-  async assignPlayerCategory(params: string[]): Promise<void> {
-    const category = params['category'];
-    const playerId = params['playerId'];
+  async assignPlayerCategory(params: {
+    category: string;
+    playerId: string;
+  }): Promise<void> {
+    const { category, playerId } = params;
 
-    const categoryFound = await this.categoryModel.findOne({ category }).exec();
-    const playerAlreadyInCategory = await this.categoryModel
-      .find({ category })
-      .where('players')
-      .in(playerId)
-      .exec();
     await this.playersService.getPlayerById(playerId);
 
-    if (!categoryFound) {
-      throw new NotFoundException(`Category ${category} not found`);
-    }
-
-    if (playerAlreadyInCategory.length > 0) {
+    const alreadyAssigned = await this.categoryModel
+      .findOne({ category, players: { $in: [playerId] } })
+      .exec();
+    if (alreadyAssigned) {
       throw new BadRequestException(
         `Player ${playerId} already assigned to category ${category}`,
       );
     }
 
-    categoryFound.players.push(playerId);
-    await this.categoryModel
-      .findOneAndUpdate({ category }, { $set: categoryFound })
+    const updatedCategory = await this.categoryModel
+      .findOneAndUpdate(
+        { category },
+        { $addToSet: { players: playerId } },
+        { new: true },
+      )
       .exec();
+
+    if (!updatedCategory) {
+      throw new NotFoundException(`Category ${category} not found`);
+    }
+
+    const playerAlreadyInCategory = updatedCategory.players.some(
+      (player) => this.toIdString(player) === playerId,
+    );
+    if (!playerAlreadyInCategory) {
+      throw new BadRequestException(
+        `Player ${playerId} could not be assigned to category ${category}`,
+      );
+    }
+  }
+
+  private toIdString(value: unknown): string {
+    if (typeof value === 'string') return value;
+    if (value instanceof Types.ObjectId) return value.toString();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const maybeDoc = value as any;
+    return maybeDoc?._id?.toString?.() ?? String(value);
   }
 }
