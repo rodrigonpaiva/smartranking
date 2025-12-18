@@ -6,12 +6,13 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Challenge, Match } from './interfaces/challenge.interface';
-import { Model, Types } from 'mongoose';
+import { Model } from 'mongoose';
 import { PlayersService } from '../players/players.service';
 import { CategoriesService } from '../categories/categories.service';
 import { CreateChallengeDto } from './dtos/create-challenge.dto';
 import { ChallengeStatus } from './interfaces/challenge-status.emun';
 import { UpdateChallengeDto } from './dtos/update-challenge.dto';
+import { toIdString } from '../common/utils/mongoose.util';
 
 @Injectable()
 export class ChallengesService {
@@ -33,10 +34,10 @@ export class ChallengesService {
       ),
     );
 
-    const requesterId: string = this.toIdString(createChallengeDto.requester);
+    const requesterId: string = toIdString(createChallengeDto.requester);
 
     const applicantOpponentInTheMatch = createChallengeDto.players.filter(
-      (playerId) => this.toIdString(playerId) === requesterId,
+      (playerId) => toIdString(playerId) === requesterId,
     );
 
     this.logger.log(
@@ -65,10 +66,10 @@ export class ChallengesService {
     }
 
     const categoryPlayerIds = new Set(
-      categoryPlayer.players.map((player) => this.toIdString(player)),
+      categoryPlayer.players.map((player) => toIdString(player)),
     );
     const playersOutsideCategory = players.filter(
-      (player) => !categoryPlayerIds.has(this.toIdString(player._id)),
+      (player) => !categoryPlayerIds.has(toIdString(player._id)),
     );
     if (playersOutsideCategory.length > 0) {
       this.logger.error(
@@ -139,7 +140,7 @@ export class ChallengesService {
     }
 
     const isPlayerInChallenge = challenge.players.some(
-      (player) => this.toIdString(player) === def,
+      (player) => toIdString(player) === def,
     );
     if (!isPlayerInChallenge) {
       throw new BadRequestException(
@@ -208,13 +209,5 @@ export class ChallengesService {
     }
 
     return updatedChallenge;
-  }
-
-  private toIdString(value: unknown): string {
-    if (typeof value === 'string') return value;
-    if (value instanceof Types.ObjectId) return value.toString();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const maybeDoc = value as any;
-    return maybeDoc?._id?.toString?.() ?? String(value);
   }
 }

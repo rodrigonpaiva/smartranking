@@ -3,12 +3,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Model, Types } from 'mongoose';
+import { Model } from 'mongoose';
 import { Category } from './interfaces/category.interface';
 import { CreateCategoryDto } from './dto/cretae-categorie.dto';
 import { InjectModel } from '@nestjs/mongoose';
 import { UpdateCategoryDto } from './dto/update-categorie.dt';
 import { PlayersService } from '../players/players.service';
+import { toIdString } from '../common/utils/mongoose.util';
 
 @Injectable()
 export class CategoriesService {
@@ -108,20 +109,12 @@ export class CategoriesService {
     }
 
     const playerAlreadyInCategory = updatedCategory.players.some(
-      (player) => this.toIdString(player) === playerId,
+      (player) => toIdString(player) === playerId,
     );
     if (!playerAlreadyInCategory) {
       throw new BadRequestException(
         `Player ${playerId} could not be assigned to category ${category}`,
       );
     }
-  }
-
-  private toIdString(value: unknown): string {
-    if (typeof value === 'string') return value;
-    if (value instanceof Types.ObjectId) return value.toString();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const maybeDoc = value as any;
-    return maybeDoc?._id?.toString?.() ?? String(value);
   }
 }
