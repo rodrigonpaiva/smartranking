@@ -43,7 +43,7 @@ export class CategoriesService {
     if (!categoryFound) {
       throw new NotFoundException(`Category ${category} not found`);
     }
-    return categoryFound;
+    return categoryFound.populate('players');
   }
 
   async getCategoryByPlayer(playerId: string): Promise<Category> {
@@ -115,6 +115,16 @@ export class CategoriesService {
       throw new BadRequestException(
         `Player ${playerId} could not be assigned to category ${category}`,
       );
+    }
+  }
+
+  async deleteCategory(category: string): Promise<void> {
+    const { deletedCount } = await this.categoryModel
+      .deleteOne({ category })
+      .exec();
+
+    if (!deletedCount) {
+      throw new NotFoundException(`Category ${category} not found`);
     }
   }
 }

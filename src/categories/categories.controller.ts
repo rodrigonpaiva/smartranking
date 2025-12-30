@@ -5,6 +5,7 @@ import {
   Param,
   Post,
   Put,
+  Delete,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
@@ -55,5 +56,10 @@ export class CategoriesController {
       category,
       playerId,
     });
+  }
+
+  @Delete('/:category')
+  async deleteCategory(@Param('category') category: string): Promise<void> {
+    await this.categoriesService.deleteCategory(category);
   }
 }
