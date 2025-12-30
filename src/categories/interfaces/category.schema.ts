@@ -1,8 +1,9 @@
 import * as mongoose from 'mongoose';
+import { tenancyPlugin } from '../../tenancy/tenancy.plugin';
 
 export const CategorySchema = new mongoose.Schema(
   {
-    category: { type: String, unique: true },
+    category: { type: String },
     description: { type: String },
     events: [
       {
@@ -20,3 +21,6 @@ export const CategorySchema = new mongoose.Schema(
   },
   { timestamps: true, collection: 'categorie' },
 );
+
+CategorySchema.plugin(tenancyPlugin);
+CategorySchema.index({ tenant: 1, category: 1 }, { unique: true });

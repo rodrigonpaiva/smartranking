@@ -45,6 +45,15 @@ The API will be available at `http://localhost:8080`.
 
 Base path: `/api/v1`
 
+### Tenancy
+
+All routes accept a tenant via header or query param:
+
+- Header: `x-tenant-id: <tenant>`
+- Query: `?tenant=<tenant>`
+
+If no tenant is provided, the default tenant is `default`.
+
 ### Players
 
 - `POST /players` – Create a player. Body: `email`, `phone`, `name` (email must be unique).

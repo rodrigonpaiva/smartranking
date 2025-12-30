@@ -4,6 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CategoriesModule } from './categories/categories.module';
 import { AuthModule } from './auth/auth.module';
+import { TenancyModule } from './tenancy/tenancy.module';
 
 @Module({
   imports: [
@@ -17,6 +18,11 @@ import { AuthModule } from './auth/auth.module';
         uri: configService.getOrThrow<string>('MONGODB_URI'),
         dbName: configService.getOrThrow<string>('MONGODB_DB_NAME'),
       }),
+    }),
+    TenancyModule.forRoot({
+      headerName: 'x-tenant-id',
+      queryParameterName: 'tenant',
+      defaultTenant: 'default',
     }),
     AuthModule,
     PlayersModule,
