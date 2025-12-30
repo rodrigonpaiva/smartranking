@@ -5,8 +5,8 @@ services:
     restart: always
     environment:
       # Cria um usuário root e já provisiona o banco esperado pela API
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_USER:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_PASSWORD:-password}
       MONGO_INITDB_DATABASE: smartranking
     ports:
       - "27017:27017" # expõe a porta padrão
