@@ -8,11 +8,13 @@ import {
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
+import { AllowAnonymous } from '@thallesp/nestjs-better-auth';
 import { CreateCategoryDto } from './dto/cretae-categorie.dto';
 import { CategoriesService } from './categories.service';
 import { Category } from './interfaces/category.interface';
 import { UpdateCategoryDto } from './dto/update-categorie.dt';
 
+@AllowAnonymous()
 @Controller('api/v1/categories')
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}

@@ -5,5 +5,10 @@
   "testRegex": ".e2e-spec.ts$",
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "moduleNameMapper": {
+    "^@thallesp/nestjs-better-auth$": "<rootDir>/stubs/nestjs-better-auth.ts",
+    "^better-auth$": "<rootDir>/stubs/better-auth.ts",
+    "^better-auth/adapters/mongodb$": "<rootDir>/stubs/better-auth-adapters-mongodb.ts"
   }
 }

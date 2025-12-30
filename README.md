@@ -23,6 +23,10 @@ Create `.env` from the sample and adjust values:
 ```env
 MONGODB_URI=mongodb://127.0.0.1:27017/smartranking
 MONGODB_DB_NAME=smartranking
+BETTER_AUTH_SECRET=your-32-char-secret
+BETTER_AUTH_URL=http://localhost:8080
+BETTER_AUTH_RATE_LIMIT_MAX=100
+BETTER_AUTH_RATE_LIMIT_WINDOW=60
 PORT=8080
 ```
 
@@ -59,6 +63,14 @@ Base path: `/api/v1`
 - `PUT /categories/:category` – Update description or events.
 - `POST /categories/:category/players/:playerId` – Assign an existing player to a category; errors if the player is missing or already assigned.
 
+### Auth (Better Auth)
+
+Base path: `/api/auth`
+
+- `POST /sign-up/email` – Create a user with `email`, `password`, `name`.
+- `POST /sign-in/email` – Sign in with `email` and `password`.
+- `GET /get-session` – Returns the current session and user (requires cookie).
+
 **Error shape**
 All uncaught errors return:
 
@@ -85,6 +97,22 @@ npm run test:watch
 npm run test:cov
 npm run test:e2e
 ```
+
+## Security Tests
+
+Run the security-focused e2e suite:
+
+```bash
+npm run test:e2e
+```
+
+Scope covered in `test/security.e2e-spec.ts`:
+
+- Auth surface availability (Better Auth routes respond)
+- Input validation for DTO payloads
+- NoSQL injection resistance for query params
+- Rate limiting behavior (tested via auth endpoints)
+- CORS behavior for trusted vs. untrusted origins
 
 ## Notes & Next Steps
 

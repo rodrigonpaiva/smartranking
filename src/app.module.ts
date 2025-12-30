@@ -3,6 +3,7 @@ import { PlayersModule } from './players/players.module';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CategoriesModule } from './categories/categories.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { CategoriesModule } from './categories/categories.module';
         dbName: configService.getOrThrow<string>('MONGODB_DB_NAME'),
       }),
     }),
+    AuthModule,
     PlayersModule,
     CategoriesModule,
   ],

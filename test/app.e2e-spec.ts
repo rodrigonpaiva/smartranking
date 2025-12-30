@@ -4,15 +4,28 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import request from 'supertest';
 
 import { AllExceptionsFilter } from '../src/common/filters/http-exception.filter';
-import { AppModule } from '../src/app.module';
 
 jest.setTimeout(30000);
+
+jest.mock('better-auth', () => ({
+  betterAuth: (options: Record<string, unknown>) => ({
+    options,
+    handler: (_req: unknown, res: { status: (code: number) => { end: () => void } }) => {
+      res.status(200).end();
+    },
+  }),
+}));
+
+jest.mock('better-auth/adapters/mongodb', () => ({
+  mongodbAdapter: () => ({}),
+}));
 
 describe('SmartRanking API (e2e)', () => {
   let app: INestApplication;
   let mongo: MongoMemoryServer;
   let httpServer: any;
   let createdPlayerId: string;
+  let authMongoClient: { close: () => Promise<void> };
 
   beforeAll(async () => {
     mongo = await MongoMemoryServer.create({
@@ -23,6 +36,12 @@ describe('SmartRanking API (e2e)', () => {
     process.env.MONGODB_URI = uri;
     process.env.MONGODB_DB_NAME = 'smartranking-e2e';
     process.env.PORT = '0';
+    process.env.BETTER_AUTH_SECRET = 'test-secret-please-change-32-chars';
+    process.env.BETTER_AUTH_URL = 'http://localhost:3000';
+
+    const { AppModule } = require('../src/app.module');
+    const authModule = require('../src/auth/auth');
+    authMongoClient = authModule.authMongoClient;
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -37,6 +56,10 @@ describe('SmartRanking API (e2e)', () => {
   afterAll(async () => {
     if (app) {
       await app.close();
+    }
+
+    if (authMongoClient) {
+      await authMongoClient.close();
     }
 
     if (mongo) {
