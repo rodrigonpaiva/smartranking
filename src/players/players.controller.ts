@@ -32,23 +32,23 @@ export class PlayersController {
     return await this.playersService.getAllPlayers();
   }
 
-  @Get('by-email')
+  @Get('by-email/:email')
   async getPlayerByEmail(
     @Param('email', ValidationParamPipe) email: string,
   ): Promise<Player> {
-    return await this.playersService.getPlayerById(email);
-  }
-
-  @Get('/:_id')
-  async getPlayerByid(
-    @Param('_id', ValidationParamPipe) _id: string,
-  ): Promise<Player> {
-    return await this.playersService.getPlayerById(_id);
+    return await this.playersService.getPlayerByEmail(email);
   }
 
   @Get('by-phone')
   async getPlayerByPhone(@Query('phone') phone: string): Promise<Player> {
     return await this.playersService.getPlayerByPhone(phone);
+  }
+
+  @Get(':_id')
+  async getPlayerByid(
+    @Param('_id', ValidationParamPipe) _id: string,
+  ): Promise<Player> {
+    return await this.playersService.getPlayerById(_id);
   }
 
   @Put('/:_id')

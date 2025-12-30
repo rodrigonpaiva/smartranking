@@ -1,0 +1,19 @@
+services:
+  mongodb:
+    image: mongo:8.0 # imagem oficial do MongoDB
+    container_name: mongodb
+    restart: always
+    environment:
+      # Cria um usuário root e já provisiona o banco esperado pela API
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: smartranking
+    ports:
+      - "27017:27017" # expõe a porta padrão
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+
+volumes:
+  mongo-data:
+  mongo-config:
