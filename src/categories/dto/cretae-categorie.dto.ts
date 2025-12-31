@@ -1,5 +1,19 @@
-import { ArrayMinSize, IsArray, IsNotEmpty, IsString } from 'class-validator';
-import { Event } from '../interfaces/category.interface';
+import { ArrayMinSize, IsArray, IsIn, IsNotEmpty, IsNumber, IsString, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class CategoryEventDto {
+  @IsString()
+  @IsNotEmpty()
+  readonly name: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @IsIn(['+', '-'])
+  readonly operation: string;
+
+  @IsNumber()
+  readonly value: number;
+}
 
 export class CreateCategoryDto {
   @IsString()
@@ -12,5 +26,11 @@ export class CreateCategoryDto {
 
   @IsArray()
   @ArrayMinSize(1)
-  readonly events: Array<Event>;
+  @ValidateNested({ each: true })
+  @Type(() => CategoryEventDto)
+  readonly events: Array<CategoryEventDto>;
+
+  @IsString()
+  @IsNotEmpty()
+  readonly clubId: string;
 }

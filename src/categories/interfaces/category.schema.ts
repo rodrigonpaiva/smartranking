@@ -12,6 +12,11 @@ export const CategorySchema = new mongoose.Schema(
         value: { type: Number },
       },
     ],
+    clubId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Club',
+      required: true,
+    },
     players: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -23,4 +28,4 @@ export const CategorySchema = new mongoose.Schema(
 );
 
 CategorySchema.plugin(tenancyPlugin);
-CategorySchema.index({ tenant: 1, category: 1 }, { unique: true });
+CategorySchema.index({ tenant: 1, clubId: 1, category: 1 }, { unique: true });

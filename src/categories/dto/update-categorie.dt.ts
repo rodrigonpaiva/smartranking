@@ -1,5 +1,6 @@
-import { ArrayMinSize, IsArray, IsOptional, IsString } from 'class-validator';
-import { Event } from '../interfaces/category.interface';
+import { ArrayMinSize, IsArray, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+import { CategoryEventDto } from './cretae-categorie.dto';
 
 export class UpdateCategoryDto {
   @IsString()
@@ -8,5 +9,7 @@ export class UpdateCategoryDto {
 
   @IsArray()
   @ArrayMinSize(1)
-  events: Array<Event>;
+  @ValidateNested({ each: true })
+  @Type(() => CategoryEventDto)
+  events: Array<CategoryEventDto>;
 }

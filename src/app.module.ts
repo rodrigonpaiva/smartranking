@@ -5,6 +5,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CategoriesModule } from './categories/categories.module';
 import { AuthModule } from './auth/auth.module';
 import { TenancyModule } from './tenancy/tenancy.module';
+import { ClubsModule } from './clubs/clubs.module';
+import { UsersModule } from './users/users.module';
+import { MatchesModule } from './matches/matches.module';
+import { APP_GUARD } from '@nestjs/core';
+import { AccessContextGuard } from './auth/access-context.guard';
+import { RolesGuard } from './auth/roles.guard';
 
 @Module({
   imports: [
@@ -25,10 +31,22 @@ import { TenancyModule } from './tenancy/tenancy.module';
       defaultTenant: 'default',
     }),
     AuthModule,
+    ClubsModule,
     PlayersModule,
     CategoriesModule,
+    UsersModule,
+    MatchesModule,
   ],
   controllers: [],
-  providers: [],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: AccessContextGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
+  ],
 })
 export class AppModule {}

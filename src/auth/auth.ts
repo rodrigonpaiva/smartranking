@@ -18,6 +18,7 @@ const client = new MongoClient(mongoUri);
 const db = client.db(mongoDbName);
 const trustedOrigins = [
   process.env.BETTER_AUTH_URL ?? 'http://localhost:8080',
+  'http://localhost:5173',
 ];
 const rateLimitMax = Number(process.env.BETTER_AUTH_RATE_LIMIT_MAX ?? '100');
 const rateLimitWindow = Number(
@@ -33,6 +34,10 @@ export const auth = betterAuth({
   trustedOrigins,
   emailAndPassword: {
     enabled: true,
+  },
+  advanced: {
+    // Dev-only workaround for environments that strip Origin on auth POSTs.
+    disableOriginCheck: true,
   },
   rateLimit: {
     enabled: true,

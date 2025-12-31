@@ -21,6 +21,7 @@ describe('Security e2e', () => {
   let app: INestApplication;
   let mongoServer: MongoMemoryServer;
   let authMongoClient: { close: () => Promise<void> };
+  let clubId: string;
 
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
@@ -55,6 +56,16 @@ describe('Security e2e', () => {
     httpAdapter.use(express.urlencoded({ extended: true }));
 
     await app.init();
+
+    const { body } = await request(app.getHttpServer())
+      .post('/api/v1/clubs')
+      .set('x-tenant-id', 'security-tenant')
+      .send({
+        name: 'Security Club',
+        slug: 'security-club',
+      })
+      .expect(201);
+    clubId = body._id;
   });
 
   afterAll(async () => {
@@ -83,10 +94,12 @@ describe('Security e2e', () => {
     it('rejects invalid email payloads', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/players')
+        .set('x-tenant-id', 'security-tenant')
         .send({
           email: 'not-an-email',
           phone: '123',
           name: 'Invalid Email',
+          clubId,
         });
 
       expect(res.status).toBe(400);
