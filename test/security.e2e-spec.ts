@@ -1,8 +1,13 @@
-import { INestApplication } from '@nestjs/common';
+import { HttpServer, INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import type { MongoClient } from 'mongodb';
 import request from 'supertest';
-import express from 'express';
+import express, { type Application, type RequestHandler } from 'express';
+import { ensureRecord, ensureString } from './utils/assertions';
+
+type AppModuleImport = typeof import('../src/app.module');
+type AuthModuleImport = typeof import('../src/auth/auth');
 
 jest.mock('better-auth', () => ({
   betterAuth: (options: Record<string, unknown>) => ({
@@ -23,7 +28,8 @@ jest.mock('better-auth/adapters/mongodb', () => ({
 describe('Security e2e', () => {
   let app: INestApplication;
   let mongoServer: MongoMemoryServer;
-  let authMongoClient: { close: () => Promise<void> };
+  let httpServer: HttpServer;
+  let authMongoClient: MongoClient | null = null;
   let clubId: string;
 
   beforeAll(async () => {
@@ -35,12 +41,12 @@ describe('Security e2e', () => {
     process.env.BETTER_AUTH_RATE_LIMIT_MAX = '3';
     process.env.BETTER_AUTH_RATE_LIMIT_WINDOW = '60';
 
-    const { AppModule } = require('../src/app.module');
-    const authModule = require('../src/auth/auth');
+    const appModule = (await import('../src/app.module')) as AppModuleImport;
+    const authModule = (await import('../src/auth/auth')) as AuthModuleImport;
     authMongoClient = authModule.authMongoClient;
 
     const moduleRef = await Test.createTestingModule({
-      imports: [AppModule],
+      imports: [appModule.AppModule],
     }).compile();
 
     app = moduleRef.createNestApplication({ bodyParser: false });
@@ -49,21 +55,19 @@ describe('Security e2e', () => {
       credentials: true,
     });
 
-    const httpAdapter = app.getHttpAdapter().getInstance();
-    const authHandler = (
-      _req: unknown,
-      res: { status: (code: number) => { json: (body: unknown) => void } },
-    ) => {
+    const httpAdapter = app.getHttpAdapter().getInstance() as Application;
+    const authHandler: RequestHandler = (_req, res) => {
       res.status(200).json({ ok: true });
     };
     httpAdapter.all('/api/auth', authHandler);
-    httpAdapter.all('/api/auth/{*path}', authHandler);
+    httpAdapter.all('/api/auth/*', authHandler);
     httpAdapter.use(express.json());
     httpAdapter.use(express.urlencoded({ extended: true }));
 
     await app.init();
+    httpServer = app.getHttpServer() as HttpServer;
 
-    const { body } = await request(app.getHttpServer())
+    const clubResponse = await request(httpServer)
       .post('/api/v1/clubs')
       .set('x-tenant-id', 'security-tenant')
       .send({
@@ -71,7 +75,8 @@ describe('Security e2e', () => {
         slug: 'security-club',
       })
       .expect(201);
-    clubId = body._id;
+    const body = ensureRecord(clubResponse.body, 'create club response');
+    clubId = ensureString(body._id, 'club id');
   });
 
   afterAll(async () => {
@@ -88,9 +93,7 @@ describe('Security e2e', () => {
 
   describe('Auth', () => {
     it('responds to auth routes', async () => {
-      const res = await request(app.getHttpServer()).get(
-        '/api/auth/get-session',
-      );
+      const res = await request(httpServer).get('/api/auth/get-session');
 
       expect(res.status).toBe(200);
     });
@@ -98,7 +101,7 @@ describe('Security e2e', () => {
 
   describe('Validation and NoSQL injection', () => {
     it('rejects invalid email payloads', async () => {
-      const res = await request(app.getHttpServer())
+      const res = await request(httpServer)
         .post('/api/v1/players')
         .set('x-tenant-id', 'security-tenant')
         .send({
@@ -112,18 +115,16 @@ describe('Security e2e', () => {
     });
 
     it('rejects missing required fields', async () => {
-      const res = await request(app.getHttpServer())
-        .post('/api/v1/players')
-        .send({
-          phone: '123',
-          name: 'Missing Email',
-        });
+      const res = await request(httpServer).post('/api/v1/players').send({
+        phone: '123',
+        name: 'Missing Email',
+      });
 
       expect(res.status).toBe(400);
     });
 
     it('blocks NoSQL injection via phone query', async () => {
-      const res = await request(app.getHttpServer()).get(
+      const res = await request(httpServer).get(
         '/api/v1/players/by-phone?phone[$ne]=1',
       );
 
@@ -133,9 +134,7 @@ describe('Security e2e', () => {
 
   describe('Rate limiting and brute force', () => {
     it('accepts auth traffic (rate limiting covered in runtime)', async () => {
-      const res = await request(app.getHttpServer()).post(
-        '/api/auth/sign-in/email',
-      );
+      const res = await request(httpServer).post('/api/auth/sign-in/email');
 
       expect(res.status).toBe(200);
     });
@@ -143,8 +142,9 @@ describe('Security e2e', () => {
 
   describe('CORS and trusted origins', () => {
     it('allows configured origins', async () => {
-      const allowedOrigin = process.env.BETTER_AUTH_URL as string;
-      const res = await request(app.getHttpServer())
+      const allowedOrigin =
+        process.env.BETTER_AUTH_URL ?? 'http://localhost:3000';
+      const res = await request(httpServer)
         .get('/api/auth/get-session')
         .set('Origin', allowedOrigin);
 
@@ -152,7 +152,7 @@ describe('Security e2e', () => {
     });
 
     it('rejects untrusted origins', async () => {
-      const res = await request(app.getHttpServer())
+      const res = await request(httpServer)
         .get('/api/auth/get-session')
         .set('Origin', 'http://evil.example');
 

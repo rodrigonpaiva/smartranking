@@ -24,7 +24,7 @@ export class UsersController {
 
   @Get('me')
   @OptionalAuth()
-  async getMe(@Req() req: Request & { user?: unknown; userProfile?: unknown }) {
+  getMe(@Req() req: Request & { user?: unknown; userProfile?: unknown }) {
     return {
       user: req.user ?? null,
       profile: req.userProfile ?? null,

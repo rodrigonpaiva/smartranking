@@ -1,3 +1,5 @@
-export const mongodbAdapter = (_db: unknown, _options?: unknown) => {
+export const mongodbAdapter = (db: unknown, options?: unknown) => {
+  void db;
+  void options;
   return {};
 };

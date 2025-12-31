@@ -1,16 +1,20 @@
-type DecoratorFactory = (...args: any[]) => void;
+type DecoratorFactory = (...args: unknown[]) => void;
 
 const noopDecorator =
   () =>
-  (
-    _target?: unknown,
-    _key?: string | symbol,
-    _descriptor?: unknown,
-  ): void => {};
+  (target?: unknown, key?: string | symbol, descriptor?: unknown): void => {
+    void target;
+    void key;
+    void descriptor;
+  };
 
 const noopParamDecorator =
   () =>
-  (_target?: unknown, _key?: string | symbol, _index?: number): void => {};
+  (target?: unknown, key?: string | symbol, index?: number): void => {
+    void target;
+    void key;
+    void index;
+  };
 
 export const AllowAnonymous: DecoratorFactory = () => noopDecorator();
 export const OptionalAuth: DecoratorFactory = () => noopDecorator();
@@ -21,11 +25,14 @@ export class AuthGuard {}
 
 export class AuthService<TAuth = unknown> {
   api: Record<string, unknown> = {};
-  constructor(_auth?: TAuth) {}
+  constructor(auth?: TAuth) {
+    void auth;
+  }
 }
 
 export class AuthModule {
-  static forRoot(_options: unknown) {
+  static forRoot(options: unknown) {
+    void options;
     return {
       module: AuthModule,
       controllers: [],
@@ -33,7 +40,8 @@ export class AuthModule {
     };
   }
 
-  static forRootAsync(_options: unknown) {
+  static forRootAsync(options: unknown) {
+    void options;
     return {
       module: AuthModule,
       controllers: [],

@@ -11,12 +11,15 @@ export class CreateUserProfileDto {
   @IsIn([Roles.SYSTEM_ADMIN, Roles.CLUB, Roles.PLAYER])
   readonly role: UserRole;
 
-  @ValidateIf((o) => o.role === Roles.CLUB || o.role === Roles.PLAYER)
+  @ValidateIf(
+    (dto: CreateUserProfileDto) =>
+      dto.role === Roles.CLUB || dto.role === Roles.PLAYER,
+  )
   @IsString()
   @IsNotEmpty()
   readonly clubId?: string;
 
-  @ValidateIf((o) => o.role === Roles.PLAYER)
+  @ValidateIf((dto: CreateUserProfileDto) => dto.role === Roles.PLAYER)
   @IsString()
   @IsNotEmpty()
   readonly playerId?: string;

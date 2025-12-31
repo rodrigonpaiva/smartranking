@@ -67,27 +67,41 @@ export const tenancyPlugin = (
     });
   });
 
-  schema.pre('save', function () {
-    if (shouldSkipTenancy()) return;
-    const scope = tenancyContext.get();
-    if (!scope?.tenant) return;
-    if (!this.get(tenantField)) {
-      this.set(tenantField, scope.tenant);
-    }
-  });
-
-  (schema as unknown as { pre: Function }).pre(
-    'insertMany',
-    function (next: () => void, docs: Array<Record<string, unknown>>) {
-      if (shouldSkipTenancy()) return next();
+  schema.pre(
+    'save',
+    function (this: {
+      get: (field: string) => unknown;
+      set: (field: string, value: unknown) => void;
+    }) {
+      if (shouldSkipTenancy()) return;
       const scope = tenancyContext.get();
-      if (!scope?.tenant) return next();
-      docs.forEach((doc) => {
-        if (!doc[tenantField]) {
-          doc[tenantField] = scope.tenant;
-        }
-      });
-      return next();
+      if (!scope?.tenant) return;
+      if (!this.get(tenantField)) {
+        this.set(tenantField, scope.tenant);
+      }
     },
   );
+
+  (
+    schema as Schema & {
+      pre: (name: string, fn: (...args: unknown[]) => void) => void;
+    }
+  ).pre('insertMany', function (...args: unknown[]) {
+    const [next, docs] = args as [() => void, Array<Record<string, unknown>>];
+    if (shouldSkipTenancy()) {
+      next();
+      return;
+    }
+    const scope = tenancyContext.get();
+    if (!scope?.tenant) {
+      next();
+      return;
+    }
+    docs.forEach((doc) => {
+      if (!doc[tenantField]) {
+        doc[tenantField] = scope.tenant;
+      }
+    });
+    next();
+  });
 };

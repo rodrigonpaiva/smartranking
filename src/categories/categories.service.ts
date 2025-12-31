@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Category } from './interfaces/category.interface';
 import { CreateCategoryDto } from './dto/cretae-categorie.dto';
 import { InjectModel } from '@nestjs/mongoose';
@@ -46,8 +46,11 @@ export class CategoriesService {
     if (!playerId) {
       throw new NotFoundException('Player profile not linked');
     }
+    if (!Types.ObjectId.isValid(playerId)) {
+      throw new BadRequestException('Invalid player identifier');
+    }
     return await this.categoryModel
-      .find({ players: playerId } as unknown as Record<string, unknown>)
+      .find({ players: new Types.ObjectId(playerId) })
       .populate('players')
       .exec();
   }
@@ -81,21 +84,22 @@ export class CategoriesService {
     return updated as Category;
   }
 
-  async assignPlayerCategory(params: string[]): Promise<void> {
-    const category = params['category'];
-    const playerId = params['playerId'];
+  async assignPlayerCategory(
+    params: { category: string; playerId: string } | string[],
+  ): Promise<void> {
+    const { category, playerId } = this.normalizeAssignParams(params);
 
     const categoryFound = await this.categoryModel.findOne({ category }).exec();
-    const playerAlreadyInCategory = await this.categoryModel
-      .find({ category, clubId: categoryFound?.clubId })
-      .where('players')
-      .in(playerId)
-      .exec();
-    const player = await this.playersService.getPlayerById(playerId);
-
     if (!categoryFound) {
       throw new NotFoundException(`Category ${category} not found`);
     }
+
+    const playerAlreadyInCategory = await this.categoryModel
+      .find({ category, clubId: categoryFound.clubId })
+      .where('players')
+      .in([playerId])
+      .exec();
+    const player = await this.playersService.getPlayerById(playerId);
 
     if (playerAlreadyInCategory.length > 0) {
       throw new BadRequestException(
@@ -113,5 +117,21 @@ export class CategoriesService {
     await this.categoryModel
       .findOneAndUpdate({ category }, { $set: categoryFound })
       .exec();
+  }
+  private normalizeAssignParams(
+    params: { category: string; playerId: string } | string[],
+  ): { category: string; playerId: string } {
+    if (Array.isArray(params)) {
+      const [category, playerId] = params;
+      if (!category || !playerId) {
+        throw new BadRequestException('category and playerId are required');
+      }
+      return { category, playerId };
+    }
+    const { category, playerId } = params;
+    if (!category || !playerId) {
+      throw new BadRequestException('category and playerId are required');
+    }
+    return { category, playerId };
   }
 }

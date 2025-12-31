@@ -1,7 +1,10 @@
-import { INestApplication } from '@nestjs/common';
+import { HttpServer, INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import request from 'supertest';
+import { ensureArray, ensureRecord, ensureString } from './utils/assertions';
+
+type AppModuleImport = typeof import('../src/app.module');
 
 jest.mock('better-auth', () => ({
   betterAuth: (options: Record<string, unknown>) => ({
@@ -22,6 +25,7 @@ jest.mock('better-auth/adapters/mongodb', () => ({
 describe('Tenancy e2e', () => {
   let app: INestApplication;
   let mongoServer: MongoMemoryServer;
+  let httpServer: HttpServer;
 
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
@@ -30,13 +34,14 @@ describe('Tenancy e2e', () => {
     process.env.BETTER_AUTH_SECRET = 'test-secret-please-change-32-chars';
     process.env.BETTER_AUTH_URL = 'http://localhost:3000';
 
-    const { AppModule } = require('../src/app.module');
+    const appModule = (await import('../src/app.module')) as AppModuleImport;
     const moduleRef = await Test.createTestingModule({
-      imports: [AppModule],
+      imports: [appModule.AppModule],
     }).compile();
 
     app = moduleRef.createNestApplication();
     await app.init();
+    httpServer = app.getHttpServer() as HttpServer;
   });
 
   afterAll(async () => {
@@ -52,78 +57,96 @@ describe('Tenancy e2e', () => {
     const tenantA = 'club-a';
     const tenantB = 'club-b';
 
-    const clubA = await request(app.getHttpServer())
+    const clubAResponse = await request(httpServer)
       .post('/api/v1/clubs')
       .set('x-tenant-id', tenantA)
       .send({ name: 'Club A', slug: 'club-a' })
       .expect(201);
+    const clubABody = ensureRecord(clubAResponse.body, 'club A response');
+    const clubAId = ensureString(clubABody._id, 'club A id');
 
-    const clubB = await request(app.getHttpServer())
+    const clubBResponse = await request(httpServer)
       .post('/api/v1/clubs')
       .set('x-tenant-id', tenantB)
       .send({ name: 'Club B', slug: 'club-b' })
       .expect(201);
+    const clubBBody = ensureRecord(clubBResponse.body, 'club B response');
+    const clubBId = ensureString(clubBBody._id, 'club B id');
 
-    await request(app.getHttpServer())
+    await request(httpServer)
       .post('/api/v1/players')
       .set('x-tenant-id', tenantA)
       .send({
         email: 'a@example.com',
         name: 'Rider A',
         phone: '111',
-        clubId: clubA.body._id,
+        clubId: clubAId,
       })
       .expect(201);
 
-    await request(app.getHttpServer())
+    await request(httpServer)
       .post('/api/v1/categories')
       .set('x-tenant-id', tenantA)
       .send({
         category: 'A',
         description: 'Category A',
         events: [{ name: 'Win', operation: '+', value: 10 }],
-        clubId: clubA.body._id,
+        clubId: clubAId,
       })
       .expect(201);
 
-    const clubsTenantB = await request(app.getHttpServer())
+    const clubsTenantBResponse = await request(httpServer)
       .get('/api/v1/clubs')
       .set('x-tenant-id', tenantB)
       .expect(200);
-    expect(clubsTenantB.body).toHaveLength(1);
-    expect(clubsTenantB.body[0]._id).toBe(clubB.body._id);
+    const clubsTenantB = ensureArray(
+      clubsTenantBResponse.body,
+      'clubs tenant B',
+    ).map((item, index) => ensureRecord(item, `club ${index}`));
+    expect(clubsTenantB).toHaveLength(1);
+    expect(ensureString(clubsTenantB[0]._id, 'club id')).toBe(clubBId);
 
-    const playersTenantB = await request(app.getHttpServer())
+    const playersTenantBResponse = await request(httpServer)
       .get('/api/v1/players')
       .set('x-tenant-id', tenantB)
       .expect(200);
-    expect(playersTenantB.body).toHaveLength(0);
+    const playersTenantB = ensureArray(
+      playersTenantBResponse.body,
+      'players tenant B',
+    );
+    expect(playersTenantB).toHaveLength(0);
 
-    const categoriesTenantB = await request(app.getHttpServer())
+    const categoriesTenantBResponse = await request(httpServer)
       .get('/api/v1/categories')
       .set('x-tenant-id', tenantB)
       .expect(200);
-    expect(categoriesTenantB.body).toHaveLength(0);
+    const categoriesTenantB = ensureArray(
+      categoriesTenantBResponse.body,
+      'categories tenant B',
+    );
+    expect(categoriesTenantB).toHaveLength(0);
   });
 
   it('rejects using a club from another tenant', async () => {
     const tenantA = 'club-a';
     const tenantB = 'club-b';
 
-    const clubA = await request(app.getHttpServer())
+    const clubAResponse = await request(httpServer)
       .post('/api/v1/clubs')
       .set('x-tenant-id', tenantA)
       .send({ name: 'Club A2', slug: 'club-a2' })
       .expect(201);
+    const clubABody = ensureRecord(clubAResponse.body, 'club response');
+    const clubAId = ensureString(clubABody._id, 'club id');
 
-    await request(app.getHttpServer())
+    await request(httpServer)
       .post('/api/v1/players')
       .set('x-tenant-id', tenantB)
       .send({
         email: 'b@example.com',
         name: 'Rider B',
         phone: '222',
-        clubId: clubA.body._id,
+        clubId: clubAId,
       })
       .expect(404);
   });

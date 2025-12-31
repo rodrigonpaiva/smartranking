@@ -16,6 +16,7 @@ import { CreateCategoryDto } from './dto/cretae-categorie.dto';
 import { CategoriesService } from './categories.service';
 import { Category } from './interfaces/category.interface';
 import { UpdateCategoryDto } from './dto/update-categorie.dt';
+import { ValidationParamPipe } from '../common/pipes/validation-param.pipe';
 
 @Controller('api/v1/categories')
 export class CategoriesController {
@@ -67,7 +68,13 @@ export class CategoriesController {
 
   @Post('/:category/players/:playerId')
   @RequireRoles(Roles.SYSTEM_ADMIN, Roles.CLUB)
-  async assignPlayerCategory(@Param() params: string[]): Promise<void> {
-    return await this.categoriesService.assignPlayerCategory(params);
+  async assignPlayerCategory(
+    @Param('category', ValidationParamPipe) category: string,
+    @Param('playerId', ValidationParamPipe) playerId: string,
+  ): Promise<void> {
+    return await this.categoriesService.assignPlayerCategory({
+      category,
+      playerId,
+    });
   }
 }

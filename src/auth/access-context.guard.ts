@@ -126,16 +126,28 @@ export class AccessContextGuard implements CanActivate {
     if (typeof headerTenant === 'string' && headerTenant.length > 0) {
       return headerTenant;
     }
-    const queryTenant = (request.query?.tenant ?? '') as string;
+    const queryTenant = this.getStringField(
+      this.asRecord(request.query),
+      'tenant',
+    );
     return queryTenant || undefined;
   }
 
   private extractClubId(request: RequestWithUser): string | undefined {
-    const bodyClubId = (request.body?.clubId ?? '') as string;
+    const bodyClubId = this.getStringField(
+      this.asRecord(request.body),
+      'clubId',
+    );
     if (bodyClubId) return bodyClubId;
-    const paramClubId = request.params?.clubId ?? '';
+    const paramClubId = this.getStringField(
+      this.asRecord(request.params),
+      'clubId',
+    );
     if (paramClubId) return paramClubId;
-    const queryClubId = (request.query?.clubId ?? '') as string;
+    const queryClubId = this.getStringField(
+      this.asRecord(request.query),
+      'clubId',
+    );
     if (queryClubId) return queryClubId;
     return undefined;
   }
@@ -148,8 +160,11 @@ export class AccessContextGuard implements CanActivate {
     if (!url.includes('/api/v1/users/profiles')) return false;
     const hasAnyProfile = await this.userProfilesService.hasAnyProfile();
     if (hasAnyProfile) return false;
-    if (request.body?.userId !== request.user?.id) return false;
-    if (request.body?.role !== Roles.SYSTEM_ADMIN) return false;
+    const body = this.asRecord(request.body);
+    const requestedUserId = this.getStringField(body, 'userId');
+    const requestedRole = this.getStringField(body, 'role');
+    if (requestedUserId !== request.user?.id) return false;
+    if (requestedRole !== Roles.SYSTEM_ADMIN) return false;
     return true;
   }
 
@@ -157,5 +172,23 @@ export class AccessContextGuard implements CanActivate {
     if (request.method !== 'GET') return false;
     const url = request.originalUrl ?? '';
     return url.includes('/api/v1/users/me');
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> | null {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+    return null;
+  }
+
+  private getStringField(
+    record: Record<string, unknown> | null,
+    key: string,
+  ): string | undefined {
+    if (!record) return undefined;
+    const fieldValue = record[key];
+    return typeof fieldValue === 'string' && fieldValue.length > 0
+      ? fieldValue
+      : undefined;
   }
 }
