@@ -4,10 +4,14 @@ import { CategoriesController } from './categories.controller';
 import { MongooseModule } from '@nestjs/mongoose';
 import { CategorySchema } from './interfaces/category.schema';
 import { PlayersModule } from '../players/players.module';
+import { ClubSchema } from '../clubs/interfaces/club.schema';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: 'Category', schema: CategorySchema }]),
+    MongooseModule.forFeature([
+      { name: 'Category', schema: CategorySchema },
+      { name: 'Club', schema: ClubSchema },
+    ]),
     PlayersModule,
   ],
   providers: [CategoriesService],

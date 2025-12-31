@@ -11,4 +11,8 @@ export class CreatePlayerDto {
   @IsString()
   @IsNotEmpty()
   readonly name: string;
+
+  @IsString()
+  @IsNotEmpty()
+  readonly clubId: string;
 }

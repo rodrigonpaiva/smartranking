@@ -3,26 +3,32 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Category } from './interfaces/category.interface';
 import { CreateCategoryDto } from './dto/cretae-categorie.dto';
 import { InjectModel } from '@nestjs/mongoose';
 import { UpdateCategoryDto } from './dto/update-categorie.dt';
 import { PlayersService } from '../players/players.service';
+import { Club } from '../clubs/interfaces/club.interface';
 
 @Injectable()
 export class CategoriesService {
   constructor(
     @InjectModel('Category') private readonly categoryModel: Model<Category>,
+    @InjectModel('Club') private readonly clubModel: Model<Club>,
     private readonly playersService: PlayersService,
   ) {}
 
   async createCategory(
     createCategoryDto: CreateCategoryDto,
   ): Promise<Category> {
-    const { category } = createCategoryDto;
+    const { category, clubId } = createCategoryDto;
+    const clubExists = await this.clubModel.findById(clubId).exec();
+    if (!clubExists) {
+      throw new NotFoundException(`Club with id ${clubId} not found`);
+    }
     const categoryExists = await this.categoryModel
-      .findOne({ category })
+      .findOne({ category, clubId })
       .exec();
     if (categoryExists) {
       throw new BadRequestException(`Category ${category} already exists`);
@@ -34,6 +40,19 @@ export class CategoriesService {
 
   async getCategory(): Promise<Array<Category>> {
     return await this.categoryModel.find().populate('players').exec();
+  }
+
+  async getCategoriesByPlayer(playerId?: string): Promise<Array<Category>> {
+    if (!playerId) {
+      throw new NotFoundException('Player profile not linked');
+    }
+    if (!Types.ObjectId.isValid(playerId)) {
+      throw new BadRequestException('Invalid player identifier');
+    }
+    return await this.categoryModel
+      .find({ players: new Types.ObjectId(playerId) })
+      .populate('players')
+      .exec();
   }
 
   async getCategoryById(category: string): Promise<Category> {
@@ -48,33 +67,39 @@ export class CategoriesService {
   async updateCategory(
     category: string,
     updateCategoryDto: UpdateCategoryDto,
-  ): Promise<void> {
+  ): Promise<Category> {
     const categoryFound = await this.categoryModel.findOne({ category }).exec();
 
     if (!categoryFound) {
       throw new NotFoundException(`Category ${category} not found`);
     }
 
-    await this.categoryModel
-      .findOneAndUpdate({ category }, { $set: updateCategoryDto })
+    const updated = await this.categoryModel
+      .findOneAndUpdate(
+        { category },
+        { $set: updateCategoryDto },
+        { new: true },
+      )
       .exec();
+    return updated as Category;
   }
 
-  async assignPlayerCategory(params: string[]): Promise<void> {
-    const category = params['category'];
-    const playerId = params['playerId'];
+  async assignPlayerCategory(
+    params: { category: string; playerId: string } | string[],
+  ): Promise<void> {
+    const { category, playerId } = this.normalizeAssignParams(params);
 
     const categoryFound = await this.categoryModel.findOne({ category }).exec();
-    const playerAlreadyInCategory = await this.categoryModel
-      .find({ category })
-      .where('players')
-      .in(playerId)
-      .exec();
-    await this.playersService.getPlayerById(playerId);
-
     if (!categoryFound) {
       throw new NotFoundException(`Category ${category} not found`);
     }
+
+    const playerAlreadyInCategory = await this.categoryModel
+      .find({ category, clubId: categoryFound.clubId })
+      .where('players')
+      .in([playerId])
+      .exec();
+    const player = await this.playersService.getPlayerById(playerId);
 
     if (playerAlreadyInCategory.length > 0) {
       throw new BadRequestException(
@@ -82,9 +107,31 @@ export class CategoriesService {
       );
     }
 
+    if (String(categoryFound.clubId) !== String(player.clubId)) {
+      throw new BadRequestException(
+        `Player ${playerId} does not belong to category club`,
+      );
+    }
+
     categoryFound.players.push(playerId);
     await this.categoryModel
       .findOneAndUpdate({ category }, { $set: categoryFound })
       .exec();
+  }
+  private normalizeAssignParams(
+    params: { category: string; playerId: string } | string[],
+  ): { category: string; playerId: string } {
+    if (Array.isArray(params)) {
+      const [category, playerId] = params;
+      if (!category || !playerId) {
+        throw new BadRequestException('category and playerId are required');
+      }
+      return { category, playerId };
+    }
+    const { category, playerId } = params;
+    if (!category || !playerId) {
+      throw new BadRequestException('category and playerId are required');
+    }
+    return { category, playerId };
   }
 }
