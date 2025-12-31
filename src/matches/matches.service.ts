@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -8,12 +9,16 @@ import { Model } from 'mongoose';
 import { Category } from '../categories/interfaces/category.interface';
 import { Club } from '../clubs/interfaces/club.interface';
 import { Player } from '../players/interfaces/players.interface';
+import { TenancyService } from '../tenancy/tenancy.service';
 import { CreateMatchDto } from './dtos/create-match.dto';
 import { Match } from './interfaces/match.interface';
 
-const POINTS_BY_RESULT: Record<'WIN' | 'DRAW' | 'LOSS', number> = {
-  WIN: 30,
-  DRAW: 10,
+const ELO_INITIAL_RATING = 1500;
+const ELO_K_SINGLES = 32;
+const ELO_K_DOUBLES = 24;
+const RESULT_TO_SCORE: Record<'WIN' | 'DRAW' | 'LOSS', number> = {
+  WIN: 1,
+  DRAW: 0.5,
   LOSS: 0,
 };
 
@@ -30,7 +35,10 @@ export class MatchesService {
     @InjectModel('Category') private readonly categoryModel: Model<Category>,
     @InjectModel('Club') private readonly clubModel: Model<Club>,
     @InjectModel('Player') private readonly playerModel: Model<Player>,
+    private readonly tenancyService: TenancyService,
   ) {}
+
+  private readonly logger = new Logger(MatchesService.name);
 
   async createMatch(dto: CreateMatchDto): Promise<Match> {
     const club = await this.clubModel.findById(dto.clubId).exec();
@@ -277,7 +285,20 @@ export class MatchesService {
       participants,
       playedAt: dto.playedAt ? new Date(dto.playedAt) : new Date(),
     });
-    return await matchCreated.save();
+    const persisted = await matchCreated.save();
+    const matchId = this.toId(persisted._id);
+    const tenant = this.tenancyService.tenant ?? 'unknown';
+    this.logDomainEvent('match.created', {
+      matchId,
+      tenant,
+      categoryId: this.toId(persisted.categoryId),
+    });
+    this.logDomainEvent('match.confirmed', {
+      matchId,
+      tenant,
+      categoryId: this.toId(persisted.categoryId),
+    });
+    return persisted;
   }
 
   private buildDateFilter(
@@ -336,6 +357,16 @@ export class MatchesService {
     return 'STANDARD';
   }
 
+  private logDomainEvent(
+    event: string,
+    payload: Record<string, unknown>,
+  ): void {
+    this.logger.log({
+      event,
+      ...payload,
+    });
+  }
+
   private toId(value: unknown): string {
     if (typeof value === 'string') return value;
     if (typeof value === 'number') return value.toString();
@@ -384,10 +415,14 @@ export class MatchesService {
       phone: string;
       clubId: string;
       name: string;
-      ranking: number;
+      rating: number;
       position: number;
       pictureUrl: string;
-      points: number;
+      wins: number;
+      losses: number;
+      draws: number;
+      matches: number;
+      lastMatchAt: Date | null;
     }>
   > {
     const category = await this.categoryModel.findById(categoryId).exec();
@@ -395,42 +430,173 @@ export class MatchesService {
       throw new NotFoundException(`Category with id ${categoryId} not found`);
     }
 
-    const matches = await this.matchModel.find({ categoryId }).exec();
-    const pointsMap = new Map<string, number>();
+    const matches = await this.matchModel
+      .find({ categoryId })
+      .sort({ playedAt: 1, createdAt: 1 })
+      .lean()
+      .exec();
 
-    matches.forEach((match) => {
-      match.participants?.forEach((participant) => {
-        const points = POINTS_BY_RESULT[participant.result] ?? 0;
-        const key = this.toId(participant.playerId);
-        pointsMap.set(key, (pointsMap.get(key) ?? 0) + points);
-      });
-    });
-
-    if (pointsMap.size === 0) {
+    if (matches.length === 0) {
       return [];
     }
 
+    const ratingMap = new Map<
+      string,
+      {
+        rating: number;
+        wins: number;
+        losses: number;
+        draws: number;
+        matches: number;
+        lastMatchAt: Date | null;
+      }
+    >();
+
+    matches.forEach((match) => {
+      if (!match.teams || match.teams.length !== 2) {
+        return;
+      }
+      const participantResults = new Map<string, 'WIN' | 'DRAW' | 'LOSS'>();
+      (match.participants ?? []).forEach((participant) => {
+        participantResults.set(
+          this.toId(participant.playerId),
+          participant.result,
+        );
+      });
+
+      const teamScores = match.teams.map((team) => {
+        if (!team.players || team.players.length === 0) {
+          return 0.5;
+        }
+        const firstPlayer = this.toId(team.players[0]);
+        const result = participantResults.get(firstPlayer) ?? 'DRAW';
+        return RESULT_TO_SCORE[result];
+      });
+
+      const teamRatings = match.teams.map((team) => {
+        const members = team.players ?? [];
+        if (members.length === 0) {
+          return ELO_INITIAL_RATING;
+        }
+        const total = members.reduce((sum, playerId) => {
+          const id = this.toId(playerId);
+          const state = this.getOrCreateRatingState(ratingMap, id);
+          return sum + state.rating;
+        }, 0);
+        return total / members.length;
+      });
+
+      const kFactor =
+        match.format === 'DOUBLES' ? ELO_K_DOUBLES : ELO_K_SINGLES;
+      const expectedTeamA =
+        1 / (1 + Math.pow(10, (teamRatings[1] - teamRatings[0]) / 400));
+      const expectedTeamB = 1 - expectedTeamA;
+      const actualTeamA = teamScores[0];
+      const actualTeamB = teamScores[1];
+      const deltaA = kFactor * (actualTeamA - expectedTeamA);
+      const deltaB = kFactor * (actualTeamB - expectedTeamB);
+      const matchDate =
+        this.coerceDate(match.playedAt) ??
+        this.coerceDate(match.createdAt) ??
+        new Date();
+
+      match.teams.forEach((team, index) => {
+        const delta = index === 0 ? deltaA : deltaB;
+        const score = teamScores[index];
+        const members = team.players ?? [];
+        members.forEach((playerId) => {
+          const id = this.toId(playerId);
+          const state = this.getOrCreateRatingState(ratingMap, id);
+          state.rating += delta;
+          state.matches += 1;
+          state.lastMatchAt = matchDate;
+          if (score === 1) {
+            state.wins += 1;
+          } else if (score === 0) {
+            state.losses += 1;
+          } else {
+            state.draws += 1;
+          }
+        });
+      });
+    });
+
+    const playerIds = Array.from(ratingMap.keys());
     const players = await this.playerModel
-      .find({ _id: { $in: Array.from(pointsMap.keys()) } })
+      .find({ _id: { $in: playerIds } })
+      .lean()
       .exec();
+    const playerMap = new Map(
+      players.map((player) => [this.toId(player._id), player]),
+    );
 
-    return players
-      .map((player) => {
-        const playerId = this.toId(player._id);
-        const data = player.toObject();
-
+    const ranking = playerIds
+      .map((playerId) => ({ playerId, state: ratingMap.get(playerId)! }))
+      .sort((a, b) => b.state.rating - a.state.rating)
+      .map((entry, index) => {
+        const player = playerMap.get(entry.playerId);
         return {
-          _id: playerId,
-          email: data.email,
-          phone: data.phone,
-          clubId: this.toId(data.clubId),
-          name: data.name,
-          ranking: data.ranking,
-          position: data.position,
-          pictureUrl: data.pictureUrl,
-          points: pointsMap.get(playerId) ?? 0,
+          _id: entry.playerId,
+          email: player?.email ?? '',
+          phone: player?.phone ?? '',
+          clubId: player ? this.toId(player.clubId) : '',
+          name: player?.name ?? 'Unknown Player',
+          rating: Math.round(entry.state.rating * 100) / 100,
+          position: index + 1,
+          pictureUrl: player?.pictureUrl ?? '',
+          wins: entry.state.wins,
+          losses: entry.state.losses,
+          draws: entry.state.draws,
+          matches: entry.state.matches,
+          lastMatchAt: entry.state.lastMatchAt,
         };
-      })
-      .sort((a, b) => b.points - a.points);
+      });
+
+    this.logDomainEvent('ranking.rebuild', {
+      categoryId,
+      players: ranking.length,
+      matches: matches.length,
+      tenant: this.tenancyService.tenant ?? 'unknown',
+    });
+
+    return ranking;
+  }
+
+  private getOrCreateRatingState(
+    ratingMap: Map<
+      string,
+      {
+        rating: number;
+        wins: number;
+        losses: number;
+        draws: number;
+        matches: number;
+        lastMatchAt: Date | null;
+      }
+    >,
+    playerId: string,
+  ) {
+    if (!ratingMap.has(playerId)) {
+      ratingMap.set(playerId, {
+        rating: ELO_INITIAL_RATING,
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        matches: 0,
+        lastMatchAt: null,
+      });
+    }
+    return ratingMap.get(playerId)!;
+  }
+
+  private coerceDate(value: unknown): Date | null {
+    if (!value) {
+      return null;
+    }
+    const parsed = new Date(value as string | number | Date);
+    if (Number.isNaN(parsed.getTime())) {
+      return null;
+    }
+    return parsed;
   }
 }

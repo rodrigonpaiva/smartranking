@@ -47,6 +47,8 @@ export class TenancyMiddleware implements NestMiddleware {
       return;
     }
 
+    req.tenantId = tenant;
+
     tenancyContext.run(
       {
         tenant,

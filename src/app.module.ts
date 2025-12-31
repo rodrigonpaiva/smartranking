@@ -8,9 +8,10 @@ import { TenancyModule } from './tenancy/tenancy.module';
 import { ClubsModule } from './clubs/clubs.module';
 import { UsersModule } from './users/users.module';
 import { MatchesModule } from './matches/matches.module';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AccessContextGuard } from './auth/access-context.guard';
 import { RolesGuard } from './auth/roles.guard';
+import { RequestLoggerInterceptor } from './common/interceptors/request-logger.interceptor';
 
 @Module({
   imports: [
@@ -39,6 +40,10 @@ import { RolesGuard } from './auth/roles.guard';
   ],
   controllers: [],
   providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: RequestLoggerInterceptor,
+    },
     {
       provide: APP_GUARD,
       useClass: AccessContextGuard,

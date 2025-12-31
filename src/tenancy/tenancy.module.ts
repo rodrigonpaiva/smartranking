@@ -3,11 +3,13 @@ import {
   MiddlewareConsumer,
   Module,
   NestModule,
+  Global,
 } from '@nestjs/common';
 import { TenancyMiddleware } from './tenancy.middleware';
 import { TenancyModuleOptions } from './tenancy.types';
 import { TenancyService } from './tenancy.service';
 
+@Global()
 @Module({})
 export class TenancyModule implements NestModule {
   private static options: TenancyModuleOptions = {};

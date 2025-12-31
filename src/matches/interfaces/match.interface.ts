@@ -28,4 +28,6 @@ export interface Match extends Document {
     playerId: string;
     result: 'WIN' | 'DRAW' | 'LOSS';
   }>;
+  createdAt?: Date;
+  updatedAt?: Date;
 }

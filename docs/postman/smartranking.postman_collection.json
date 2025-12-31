@@ -1,0 +1,102 @@
+{
+  "info": {
+    "name": "SmartRanking API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Sample collection for SmartRanking happy-path"
+  },
+  "item": [
+    {
+      "name": "Create Club",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-tenant-id", "value": "default" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/clubs",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "clubs"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Padel Club\",\n  \"slug\": \"padel-club\",\n  \"city\": \"São Paulo\",\n  \"state\": \"SP\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Create Category",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-tenant-id", "value": "default" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/categories",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "categories"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"category\": \"A\",\n  \"description\": \"Advanced\",\n  \"events\": [],\n  \"clubId\": \"{{clubId}}\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Create Player",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-tenant-id", "value": "default" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/players",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "players"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Alice\",\n  \"email\": \"alice@example.com\",\n  \"phone\": \"11999999999\",\n  \"clubId\": \"{{clubId}}\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Submit Match",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-tenant-id", "value": "default" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/matches",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "matches"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"clubId\": \"{{clubId}}\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"format\": \"SINGLES\",\n  \"bestOf\": 3,\n  \"decidingSetType\": \"STANDARD\",\n  \"teams\": [\n    { \"players\": [\"{{playerA}}\"] },\n    { \"players\": [\"{{playerB}}\"] }\n  ],\n  \"sets\": [\n    {\n      \"games\": [\n        { \"teamIndex\": 0, \"score\": 6 },\n        { \"teamIndex\": 1, \"score\": 3 }\n      ]\n    },\n    {\n      \"games\": [\n        { \"teamIndex\": 0, \"score\": 6 },\n        { \"teamIndex\": 1, \"score\": 4 }\n      ]\n    }\n  ]\n}"
+        }
+      }
+    },
+    {
+      "name": "Fetch Ranking",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "x-tenant-id", "value": "default" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/matches/ranking/{{categoryId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "matches", "ranking", "{{categoryId}}"]
+        }
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" }
+  ]
+}

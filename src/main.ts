@@ -1,6 +1,8 @@
+import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { toNodeHandler } from 'better-auth/node';
+import { randomUUID } from 'node:crypto';
 import express, {
   type Application,
   type NextFunction,
@@ -11,6 +13,7 @@ import express, {
 import { AppModule } from './app.module';
 import { auth } from './auth/auth';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
+import { helmet } from './security/helmet';
 
 type RequestWithUser = Request & { user?: { id?: string } | null };
 type GetSessionFn = (payload: {
@@ -19,8 +22,15 @@ type GetSessionFn = (payload: {
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
     bodyParser: false,
   });
+  app.useLogger(new Logger('AppLogger'));
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    req.requestId = req.headers['x-request-id']?.toString() ?? randomUUID();
+    next();
+  });
+  app.use(helmet());
   app.enableCors({
     origin: [
       process.env.BETTER_AUTH_URL ?? 'http://localhost:8080',
