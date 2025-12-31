@@ -2,7 +2,11 @@ import { ArgumentMetadata, BadRequestException } from '@nestjs/common';
 import { ValidationParamPipe } from './validation-param.pipe';
 
 describe('ValidationParamPipe', () => {
-  const metadata: ArgumentMetadata = { type: 'param', data: 'id', metatype: String };
+  const metadata: ArgumentMetadata = {
+    type: 'param',
+    data: 'id',
+    metatype: String,
+  };
   let pipe: ValidationParamPipe;
 
   beforeEach(() => {

@@ -6,7 +6,10 @@ import request from 'supertest';
 jest.mock('better-auth', () => ({
   betterAuth: (options: Record<string, unknown>) => ({
     options,
-    handler: (_req: unknown, res: { status: (code: number) => { end: () => void } }) => {
+    handler: (
+      _req: unknown,
+      res: { status: (code: number) => { end: () => void } },
+    ) => {
       res.status(200).end();
     },
   }),

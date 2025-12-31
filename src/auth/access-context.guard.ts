@@ -133,14 +133,16 @@ export class AccessContextGuard implements CanActivate {
   private extractClubId(request: RequestWithUser): string | undefined {
     const bodyClubId = (request.body?.clubId ?? '') as string;
     if (bodyClubId) return bodyClubId;
-    const paramClubId = (request.params?.clubId ?? '') as string;
+    const paramClubId = request.params?.clubId ?? '';
     if (paramClubId) return paramClubId;
     const queryClubId = (request.query?.clubId ?? '') as string;
     if (queryClubId) return queryClubId;
     return undefined;
   }
 
-  private async canBootstrapProfile(request: RequestWithUser): Promise<boolean> {
+  private async canBootstrapProfile(
+    request: RequestWithUser,
+  ): Promise<boolean> {
     if (request.method !== 'POST') return false;
     const url = request.originalUrl ?? '';
     if (!url.includes('/api/v1/users/profiles')) return false;

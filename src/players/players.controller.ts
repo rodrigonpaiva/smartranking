@@ -73,7 +73,8 @@ export class PlayersController {
   ): Promise<Player[]> {
     const requesterClubId = req.userProfile?.clubId;
     if (
-      (req.userProfile?.role === Roles.PLAYER || req.userProfile?.role === Roles.CLUB) &&
+      (req.userProfile?.role === Roles.PLAYER ||
+        req.userProfile?.role === Roles.CLUB) &&
       requesterClubId &&
       requesterClubId !== clubId
     ) {

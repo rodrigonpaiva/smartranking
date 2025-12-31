@@ -27,7 +27,9 @@ async function bootstrap() {
     }
     try {
       const getSession = auth.api?.getSession as
-        | ((payload: { headers: Record<string, unknown> }) => Promise<{ user?: { id?: string } } | null>)
+        | ((payload: {
+            headers: Record<string, unknown>;
+          }) => Promise<{ user?: { id?: string } } | null>)
         | undefined;
       if (getSession) {
         const session = await getSession({ headers: req.headers });

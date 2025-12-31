@@ -10,7 +10,10 @@ jest.setTimeout(30000);
 jest.mock('better-auth', () => ({
   betterAuth: (options: Record<string, unknown>) => ({
     options,
-    handler: (_req: unknown, res: { status: (code: number) => { end: () => void } }) => {
+    handler: (
+      _req: unknown,
+      res: { status: (code: number) => { end: () => void } },
+    ) => {
       res.status(200).end();
     },
   }),
@@ -138,7 +141,10 @@ describe('SmartRanking API (e2e)', () => {
     });
 
     it('updates a player and reflects changes on the next fetch', async () => {
-      const updatePayload = { name: 'Player One Updated', phone: '11888888888' };
+      const updatePayload = {
+        name: 'Player One Updated',
+        phone: '11888888888',
+      };
 
       await request(httpServer)
         .put(`/api/v1/players/${createdPlayerId}`)
@@ -151,7 +157,10 @@ describe('SmartRanking API (e2e)', () => {
         .set('x-tenant-id', 'test-tenant')
         .expect(200);
 
-      expect(body).toMatchObject({ name: updatePayload.name, phone: updatePayload.phone });
+      expect(body).toMatchObject({
+        name: updatePayload.name,
+        phone: updatePayload.phone,
+      });
     });
 
     it('finds a player by phone number', async () => {
@@ -182,12 +191,12 @@ describe('SmartRanking API (e2e)', () => {
   });
 
   describe('Categories endpoints', () => {
-      const getCategoryPayload = () => ({
-        category: 'A',
-        description: 'Category A',
-        events: [{ name: 'Match victory', operation: '+', value: 10 }],
-        clubId,
-      });
+    const getCategoryPayload = () => ({
+      category: 'A',
+      description: 'Category A',
+      events: [{ name: 'Match victory', operation: '+', value: 10 }],
+      clubId,
+    });
     let categoryPlayerId: string;
 
     beforeAll(async () => {

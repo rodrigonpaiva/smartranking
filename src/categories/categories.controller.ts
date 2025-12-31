@@ -37,7 +37,9 @@ export class CategoriesController {
 
   @Get('my')
   @RequireRoles(Roles.PLAYER)
-  async getMyCategories(@Req() req: Request & { userProfile?: { playerId?: string } }) {
+  async getMyCategories(
+    @Req() req: Request & { userProfile?: { playerId?: string } },
+  ) {
     const playerId = req.userProfile?.playerId;
     return await this.categoriesService.getCategoriesByPlayer(playerId);
   }
@@ -57,7 +59,10 @@ export class CategoriesController {
     @Body() updateCategory: UpdateCategoryDto,
     @Param('category') category: string,
   ): Promise<Category> {
-    return await this.categoriesService.updateCategory(category, updateCategory);
+    return await this.categoriesService.updateCategory(
+      category,
+      updateCategory,
+    );
   }
 
   @Post('/:category/players/:playerId')

@@ -1,4 +1,12 @@
-import { ArrayMinSize, IsArray, IsIn, IsNotEmpty, IsNumber, IsString, ValidateNested } from 'class-validator';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsIn,
+  IsNotEmpty,
+  IsNumber,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CategoryEventDto {

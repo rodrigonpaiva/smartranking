@@ -72,7 +72,11 @@ export class CategoriesService {
     }
 
     const updated = await this.categoryModel
-      .findOneAndUpdate({ category }, { $set: updateCategoryDto }, { new: true })
+      .findOneAndUpdate(
+        { category },
+        { $set: updateCategoryDto },
+        { new: true },
+      )
       .exec();
     return updated as Category;
   }

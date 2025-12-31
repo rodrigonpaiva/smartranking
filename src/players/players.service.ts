@@ -51,7 +51,11 @@ export class PlayersService {
     if (clubId) {
       filter.clubId = clubId;
     }
-    return await this.playerModel.find(filter).limit(20).setOptions({ disableTenancy: true }).exec();
+    return await this.playerModel
+      .find(filter)
+      .limit(20)
+      .setOptions({ disableTenancy: true })
+      .exec();
   }
 
   async updatePlayer(

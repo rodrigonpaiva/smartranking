@@ -7,7 +7,10 @@ import express from 'express';
 jest.mock('better-auth', () => ({
   betterAuth: (options: Record<string, unknown>) => ({
     options,
-    handler: (_req: unknown, res: { status: (code: number) => { json: (body: unknown) => void } }) => {
+    handler: (
+      _req: unknown,
+      res: { status: (code: number) => { json: (body: unknown) => void } },
+    ) => {
       res.status(200).json({ ok: true });
     },
   }),
@@ -42,12 +45,15 @@ describe('Security e2e', () => {
 
     app = moduleRef.createNestApplication({ bodyParser: false });
     app.enableCors({
-      origin: [process.env.BETTER_AUTH_URL as string],
+      origin: [process.env.BETTER_AUTH_URL],
       credentials: true,
     });
 
     const httpAdapter = app.getHttpAdapter().getInstance();
-    const authHandler = (_req: unknown, res: { status: (code: number) => { json: (body: unknown) => void } }) => {
+    const authHandler = (
+      _req: unknown,
+      res: { status: (code: number) => { json: (body: unknown) => void } },
+    ) => {
       res.status(200).json({ ok: true });
     };
     httpAdapter.all('/api/auth', authHandler);

@@ -24,7 +24,8 @@ export class TenancyMiddleware implements NestMiddleware {
 
   use(req: Request, res: Response, next: () => void): void {
     const headerName = this.options.headerName ?? TENANCY_HEADER_NAME;
-    const queryName = this.options.queryParameterName ?? TENANCY_QUERY_PARAMETER;
+    const queryName =
+      this.options.queryParameterName ?? TENANCY_QUERY_PARAMETER;
     const defaultTenant = this.options.defaultTenant ?? TENANCY_DEFAULT_TENANT;
     const allowMissingTenant = this.options.allowMissingTenant ?? false;
 
@@ -38,7 +39,10 @@ export class TenancyMiddleware implements NestMiddleware {
         : undefined;
     const tenant = headerTenant ?? queryTenant ?? defaultTenant;
 
-    if (this.options.allowTenant && !this.options.allowTenant({ req }, tenant)) {
+    if (
+      this.options.allowTenant &&
+      !this.options.allowTenant({ req }, tenant)
+    ) {
       res.status(403).json({ message: 'Tenant not allowed' });
       return;
     }
