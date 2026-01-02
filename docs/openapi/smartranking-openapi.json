@@ -1485,6 +1485,20 @@
           "Matches"
         ]
       }
+    },
+    "/api/dev/auth-user": {
+      "get": {
+        "operationId": "Dev_getAuthUser",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Dev"
+        ]
+      }
     }
   },
   "info": {

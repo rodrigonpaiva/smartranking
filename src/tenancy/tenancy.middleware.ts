@@ -19,6 +19,10 @@ export class TenancyMiddleware implements NestMiddleware {
   private static options: TenancyModuleOptions = {};
 
   use(req: Request, res: Response, next: () => void): void {
+    if (req.path?.startsWith('/api/auth')) {
+      next();
+      return;
+    }
     const headerName = (
       this.options.headerName ?? TENANCY_HEADER_NAME
     ).toLowerCase();

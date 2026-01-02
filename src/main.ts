@@ -27,6 +27,62 @@ type RequestWithUser = Request & { user?: { id?: string } | null };
 type GetSessionFn = (payload: {
   headers: Request['headers'];
 }) => Promise<{ user?: { id?: string } } | null>;
+type AuthLogRequest = Request & { _authEmail?: string | null };
+type AuthLogResponse = Response & {
+  write: Response['write'];
+  end: Response['end'];
+};
+type JsonRecord = Record<string, unknown>;
+type BufferEncoding = NodeJS.BufferEncoding;
+
+const isRecord = (value: unknown): value is JsonRecord =>
+  Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const asString = (value: unknown): string | null =>
+  typeof value === 'string' ? value : null;
+
+const parseJson = (payload: string): unknown => {
+  try {
+    return JSON.parse(payload) as unknown;
+  } catch {
+    return null;
+  }
+};
+
+const toBuffer = (chunk: unknown): Buffer | null => {
+  if (Buffer.isBuffer(chunk)) return chunk;
+  if (typeof chunk === 'string') return Buffer.from(chunk);
+  return null;
+};
+
+const normalizeWriteArgs = (
+  args: unknown[],
+): { encoding?: BufferEncoding; callback?: (err?: Error) => void } => {
+  const [encoding, callback] = args;
+  return {
+    encoding: isBufferEncoding(encoding) ? encoding : undefined,
+    callback: isWriteCallback(callback) ? callback : undefined,
+  };
+};
+
+const normalizeEndArgs = (
+  args: unknown[],
+): { encoding?: BufferEncoding; callback?: () => void } => {
+  const [encoding, callback] = args;
+  return {
+    encoding: isBufferEncoding(encoding) ? encoding : undefined,
+    callback: isEndCallback(callback) ? callback : undefined,
+  };
+};
+
+const isWriteCallback = (value: unknown): value is (err?: Error) => void =>
+  typeof value === 'function';
+
+const isEndCallback = (value: unknown): value is () => void =>
+  typeof value === 'function';
+
+const isBufferEncoding = (value: unknown): value is BufferEncoding =>
+  typeof value === 'string' && Buffer.isEncoding(value);
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -96,6 +152,78 @@ async function bootstrap(): Promise<void> {
   });
   httpAdapter.use('/api/auth', authRateLimiter);
   httpAdapter.use(/\/api\/auth(\/.*)?$/, authRateLimiter);
+  httpAdapter.use(
+    '/api/auth/sign-in/email',
+    express.json({ type: 'application/json' }),
+  );
+  httpAdapter.use(
+    '/api/auth/sign-in/email',
+    (req: AuthLogRequest, res: AuthLogResponse, next: NextFunction) => {
+      const body = (req as { body?: unknown }).body;
+      const parsed =
+        typeof body === 'string' ? parseJson(body) : (body ?? null);
+      if (isRecord(parsed)) {
+        const email = asString(parsed.email);
+        req._authEmail = email ?? null;
+      } else {
+        req._authEmail = null;
+      }
+
+      const chunks: Buffer[] = [];
+      const originalWrite = res.write.bind(res) as (
+        chunk: Buffer | string,
+        encoding?: BufferEncoding,
+        callback?: (err?: Error) => void,
+      ) => boolean;
+      const originalEnd = res.end.bind(res) as (
+        chunk?: Buffer | string,
+        encoding?: BufferEncoding,
+        callback?: () => void,
+      ) => void;
+      res.write = ((chunk, ...args) => {
+        const buffer = toBuffer(chunk);
+        if (buffer) {
+          chunks.push(buffer);
+        }
+        if (Buffer.isBuffer(chunk) || typeof chunk === 'string') {
+          const normalized = normalizeWriteArgs(args);
+          return originalWrite(chunk, normalized.encoding, normalized.callback);
+        }
+        return originalWrite('', undefined, undefined);
+      }) as Response['write'];
+      res.end = ((chunk, ...args) => {
+        const buffer = toBuffer(chunk);
+        if (buffer) {
+          chunks.push(buffer);
+        }
+        if (res.statusCode >= 400) {
+          const responseBody = Buffer.concat(chunks).toString('utf8');
+          let reason = responseBody;
+          const parsed = parseJson(responseBody);
+          if (isRecord(parsed)) {
+            const errorMessage = asString(parsed.error);
+            const message = asString(parsed.message);
+            reason = errorMessage ?? message ?? responseBody;
+          }
+          appLogger.warn('auth.signin.failed', {
+            requestId: req.requestId,
+            email: req._authEmail ?? null,
+            tenantId: req.headers['x-tenant-id'] ?? null,
+            statusCode: res.statusCode,
+            reason,
+          });
+        }
+        if (Buffer.isBuffer(chunk) || typeof chunk === 'string') {
+          const normalized = normalizeEndArgs(args);
+          return originalEnd(chunk, normalized.encoding, normalized.callback);
+        }
+        const normalized = normalizeEndArgs(args);
+        return originalEnd(undefined, normalized.encoding, normalized.callback);
+      }) as Response['end'];
+
+      next();
+    },
+  );
   const authHandler: RequestHandler = toNodeHandler(auth);
   httpAdapter.all('/api/auth', authHandler);
   httpAdapter.all(/\/api\/auth(\/.*)?$/, authHandler);

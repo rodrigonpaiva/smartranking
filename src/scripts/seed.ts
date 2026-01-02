@@ -7,8 +7,11 @@ import pino from 'pino';
 import { AppModule } from '../app.module';
 import { tenancyContext } from '../tenancy/tenancy.context';
 import { Club } from '../clubs/interfaces/club.interface';
-import { Category } from '../categories/interfaces/category.interface';
-import { Player } from '../players/interfaces/players.interface';
+import type { CategoryDocument } from '../categories/interfaces/category.interface';
+import type {
+  CreatePlayerData,
+  Player,
+} from '../players/interfaces/players.interface';
 import { MatchesService } from '../matches/matches.service';
 import { UserProfilesService } from '../users/users.service';
 import { Roles } from '../auth/roles';
@@ -74,7 +77,7 @@ interface SeededClubContext {
   plan: ClubSeedPlan;
   club: Club;
   players: Player[];
-  categories: Record<string, Category>;
+  categories: Record<string, CategoryDocument>;
   tenantId: string;
 }
 
@@ -98,10 +101,14 @@ const DEFAULT_PASSWORDS = {
 const SEED_TENANT_ID = process.env.SEED_TENANT_ID?.trim();
 
 const PLAYER_ACCOUNT: SeedUserInput = {
-  email: 'player@demo.smartranking',
+  email: 'alex.costa@demo.smartranking',
   password: DEFAULT_PASSWORDS.player,
-  name: 'Demo Player',
+  name: 'Alex Costa',
 };
+
+const DEFAULT_DEMO_TENANT_ID = 'c200089015ba5b82cb085271';
+const DEMO_TENANT_ID =
+  process.env.SEED_TENANT_ID?.trim() || DEFAULT_DEMO_TENANT_ID;
 
 const CLUB_SEEDS: ClubSeedPlan[] = [
   {
@@ -438,7 +445,9 @@ async function bootstrap(): Promise<void> {
   try {
     const logger = app.get(StructuredLoggerService);
     const clubModel = app.get<Model<Club>>(getModelToken('Club'));
-    const categoryModel = app.get<Model<Category>>(getModelToken('Category'));
+    const categoryModel = app.get<Model<CategoryDocument>>(
+      getModelToken('Category'),
+    );
     const playerModel = app.get<Model<Player>>(getModelToken('Player'));
     const matchModel = app.get<Model<Match>>(getModelToken('Match'));
     const matchesService = app.get(MatchesService);
@@ -516,11 +525,11 @@ async function ensureClub(
   };
   const existing = await clubModel.findOne({ slug: plan.slug }).exec();
   if (!existing) {
-    const payload = {
+    const payload: Club = {
       ...base,
       tenant: tenantId,
       _id: new Types.ObjectId(tenantId),
-    } as unknown as Club & { tenant: string };
+    };
     const created = new clubModel(payload);
     return (await created.save()) as Club;
   }
@@ -534,30 +543,73 @@ async function ensureClub(
 }
 
 async function ensureCategories(
-  categoryModel: Model<Category>,
+  categoryModel: Model<CategoryDocument>,
   plan: ClubSeedPlan,
   club: Club,
   tenantId: string,
-): Promise<Record<string, Category>> {
-  const categories: Record<string, Category> = {};
+): Promise<Record<string, CategoryDocument>> {
+  const categories: Record<string, CategoryDocument> = {};
+  const clubObjectId = requireObjectId(club._id, 'club');
   for (const definition of plan.categories) {
-    let category = await categoryModel
-      .findOne({ category: definition.code, clubId: club._id })
+    const category = await categoryModel
+      .findOne({ category: definition.code })
       .exec();
     if (!category) {
-      const payload = {
-        category: definition.code,
-        description: definition.description,
-        clubId: club._id,
-        players: [],
-        tenant: tenantId,
-      } as unknown as Category & { tenant: string };
-      category = await categoryModel.create(payload);
-    } else if (category.description !== definition.description) {
-      category.description = definition.description;
-      await category.save();
+      const created = await categoryModel
+        .findOneAndUpdate(
+          { category: definition.code },
+          {
+            $setOnInsert: {
+              category: definition.code,
+              description: definition.description,
+              clubId: clubObjectId,
+              players: [],
+              tenant: tenantId,
+            },
+          },
+          { upsert: true, new: true, setDefaultsOnInsert: true },
+        )
+        .exec();
+      if (created) {
+        categories[definition.code] = created;
+      }
+      continue;
     }
-    categories[definition.code] = category as Category;
+
+    const categoryTenant = category.tenant;
+    const categoryClubId = category.clubId?.toString();
+    const expectedClubId = clubObjectId.toString();
+    const scopeMatches =
+      categoryTenant === tenantId && categoryClubId === expectedClubId;
+    if (!scopeMatches) {
+      const isDev = process.env.NODE_ENV !== 'production';
+      if (isDev) {
+        console.warn('Seed category scope mismatch', {
+          category: definition.code,
+          tenantId,
+          clubId: expectedClubId,
+          existingTenant: categoryTenant ?? null,
+          existingClubId: categoryClubId ?? null,
+        });
+      }
+      categories[definition.code] = category;
+      continue;
+    }
+
+    if (category.description !== definition.description) {
+      await categoryModel
+        .updateOne(
+          { _id: category._id },
+          { $set: { description: definition.description } },
+        )
+        .exec();
+      const updated = await categoryModel.findOne({ _id: category._id }).exec();
+      if (updated) {
+        categories[definition.code] = updated;
+        continue;
+      }
+    }
+    categories[definition.code] = category;
   }
   return categories;
 }
@@ -569,16 +621,17 @@ async function ensurePlayers(
   tenantId: string,
 ): Promise<Player[]> {
   const players: Player[] = [];
+  const clubObjectId = requireObjectId(club._id, 'club');
   for (const seed of plan.players) {
     let player = await playerModel
-      .findOne({ email: seed.email, clubId: club._id })
+      .findOne({ email: seed.email, clubId: clubObjectId })
       .exec();
     if (!player) {
-      const payload = {
+      const payload: CreatePlayerData = {
         ...seed,
-        clubId: club._id,
+        clubId: clubObjectId,
         tenant: tenantId,
-      } as unknown as Player & { tenant: string };
+      };
       player = await playerModel.create(payload);
     } else {
       const updates: Partial<{ name: string; phone: string }> = {};
@@ -600,8 +653,8 @@ async function ensurePlayers(
 }
 
 async function assignPlayersToCategories(
-  categoryModel: Model<Category>,
-  categories: Record<string, Category>,
+  categoryModel: Model<CategoryDocument>,
+  categories: Record<string, CategoryDocument>,
   plan: ClubSeedPlan,
   players: Player[],
 ): Promise<void> {
@@ -623,7 +676,7 @@ async function seedMatchesForPlan(
   matchModel: Model<Match>,
   plan: ClubSeedPlan,
   club: Club,
-  categories: Record<string, Category>,
+  categories: Record<string, CategoryDocument>,
   players: Player[],
   adminUserId: string,
   tenantId: string,
@@ -711,19 +764,30 @@ function toStringId(value: unknown, label: string): string {
   throw new Error(`Unable to resolve ${label} identifier`);
 }
 
+function requireObjectId(value: unknown, label: string): Types.ObjectId {
+  if (!value) {
+    throw new Error(`${label} identifier is missing`);
+  }
+  if (value instanceof Types.ObjectId) {
+    return value;
+  }
+  if (typeof value === 'string' && Types.ObjectId.isValid(value)) {
+    return new Types.ObjectId(value);
+  }
+  throw new Error(`Invalid ${label} identifier`);
+}
+
 function deterministicObjectId(seed: string): string {
   const hash = createHash('sha1').update(seed).digest('hex').substring(0, 24);
   return new Types.ObjectId(hash).toHexString();
 }
 
 function resolveTenantId(plan: ClubSeedPlan): string {
-  if (SEED_TENANT_ID) {
-    if (CLUB_SEEDS.length === 1) {
-      return SEED_TENANT_ID;
-    }
-    return deterministicObjectId(`${SEED_TENANT_ID}-${plan.slug}`);
+  const primarySlug = CLUB_SEEDS[0]?.slug;
+  if (plan.slug === primarySlug) {
+    return DEMO_TENANT_ID;
   }
-  return deterministicObjectId(plan.slug);
+  return deterministicObjectId(`${DEMO_TENANT_ID}-${plan.slug}`);
 }
 
 async function seedAuthUsers(): Promise<SeededAccounts> {
@@ -743,6 +807,7 @@ async function seedAuthUsers(): Promise<SeededAccounts> {
 }
 
 async function ensureAuthUser(credentials: SeedUserInput): Promise<SeededUser> {
+  const isDev = process.env.NODE_ENV !== 'production';
   try {
     const result = await auth.api?.signUpEmail({
       body: {
@@ -759,18 +824,44 @@ async function ensureAuthUser(credentials: SeedUserInput): Promise<SeededUser> {
       throw error;
     }
   }
-  const fallback = await auth.api?.signInEmail({
-    body: { email: credentials.email, password: credentials.password },
-  });
+  const fallback = await trySignIn(credentials);
   if (fallback?.user?.id) {
     return { id: fallback.user.id, email: fallback.user.email };
   }
+
   const context = await auth.$context;
   const existing = await context.internalAdapter.findUserByEmail(
     credentials.email,
+    { includeAccounts: true },
   );
+  if (existing?.user?.id && isDev && context.password?.hash) {
+    const hashedPassword = await context.password.hash(credentials.password);
+    const credentialAccount = existing.accounts?.find(
+      (account) => account.providerId === 'credential',
+    );
+    if (!credentialAccount) {
+      await context.internalAdapter.createAccount({
+        userId: existing.user.id,
+        providerId: 'credential',
+        password: hashedPassword,
+        accountId: existing.user.id,
+      });
+    } else {
+      await context.internalAdapter.updatePassword(
+        existing.user.id,
+        hashedPassword,
+      );
+    }
+    const refreshed = await trySignIn(credentials);
+    if (refreshed?.user?.id) {
+      return { id: refreshed.user.id, email: refreshed.user.email };
+    }
+  }
+
   if (existing?.user?.id) {
-    return { id: existing.user.id, email: existing.user.email } as SeededUser;
+    throw new Error(
+      `Auth user exists but password did not match for ${credentials.email}`,
+    );
   }
   throw new Error(`Unable to provision auth user for ${credentials.email}`);
 }
@@ -780,6 +871,20 @@ function isUserExistsError(error: unknown): boolean {
   const status = (error as { status?: string; statusCode?: number }).status;
   const statusCode = (error as { statusCode?: number }).statusCode;
   return status === 'UNPROCESSABLE_ENTITY' || statusCode === 422;
+}
+
+async function trySignIn(
+  credentials: SeedUserInput,
+): Promise<{ user?: SeededUser } | null> {
+  try {
+    return (
+      (await auth.api?.signInEmail({
+        body: { email: credentials.email, password: credentials.password },
+      })) ?? null
+    );
+  } catch {
+    return null;
+  }
 }
 
 async function upsertProfiles(
@@ -902,6 +1007,7 @@ function logSummary(
           : undefined,
       },
     },
+    seedTenantId: DEMO_TENANT_ID,
     seedTenantOverride: SEED_TENANT_ID ?? null,
   });
 }

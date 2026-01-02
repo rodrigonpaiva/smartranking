@@ -22,7 +22,6 @@ import { UpdateCategoryDto } from './dto/update-categorie.dt';
 import { ValidationParamPipe } from '../common/pipes/validation-param.pipe';
 import { ParseMongoIdPipe } from '../common/pipes/parse-mongo-id.pipe';
 import type { AccessContext } from '../auth/access-context.types';
-import type { PaginatedResult } from '../common/interfaces/paginated-result.interface';
 import { ListCategoriesQueryDto } from './dtos/list-categories.query';
 import { PaginationQueryDto } from '../common/dtos/pagination-query.dto';
 
@@ -60,11 +59,13 @@ export class CategoriesController {
     @Req() req: Request,
     @Query(new ValidationPipe({ transform: true, whitelist: true }))
     query: ListCategoriesQueryDto,
-  ): Promise<PaginatedResult<Category>> {
-    return await this.categoriesService.getCategory(
+  ): Promise<Category[]> {
+    const result = await this.categoriesService.getCategory(
       query,
       this.getAccessContext(req),
     );
+    // Frontend contract expects a raw array for categories endpoints.
+    return result.items;
   }
 
   @Get('my')
@@ -73,12 +74,13 @@ export class CategoriesController {
     @Req() req: Request,
     @Query(new ValidationPipe({ transform: true, whitelist: true }))
     pagination: PaginationQueryDto,
-  ): Promise<PaginatedResult<Category>> {
+  ): Promise<Category[]> {
     const playerId = req.accessContext?.playerId;
-    return await this.categoriesService.getCategoriesByPlayer(
+    const result = await this.categoriesService.getCategoriesByPlayer(
       playerId,
       pagination,
     );
+    return result.items;
   }
 
   @Get('/:category')

@@ -21,13 +21,21 @@
 - **Tenant scoping**: ensure seed/test calls include `x-tenant-id=<clubId>`; logs will show the resolved tenant under `tenantId`.
 - **Validation errors (400)**: response includes `error.message` with class-validator output; cross-check DTOs in `src/**/dtos`.
 
+## Auth Validation (Manual)
+- Sign-in admin (no tenant header needed):
+  - `curl -i -c cookies.txt -H "Content-Type: application/json" -d '{"email":"admin@demo.smartranking","password":"Admin123!"}' http://localhost:8080/api/auth/sign-in/email`
+- Sign-in player (no tenant header needed):
+  - `curl -i -c cookies.txt -H "Content-Type: application/json" -d '{"email":"alex.costa@demo.smartranking","password":"Player123!"}' http://localhost:8080/api/auth/sign-in/email`
+- Fetch profile (tenant required):
+  - `curl -i -b cookies.txt -H "x-tenant-id: <clubId>" http://localhost:8080/api/v1/users/me`
+
 ## Seeds & Sample Data
 - Command: `npm run seed:dev` (idempotent).
 - Creates: 1 system admin, 2 tenant-isolated clubs (`demo-tennis-club`, `laguna-padel-club`), 10+ players per club, categories with assignments, and featured matches per club.
 - Auth credentials (also emitted in logs under `seed.summary`):
   - Admin `admin@demo.smartranking` / `Admin123!`
   - Club managers `club.demo@demo.smartranking` & `club.laguna@demo.smartranking` / `Club123!`
-  - Player `player@demo.smartranking` / `Player123!`
+  - Player `alex.costa@demo.smartranking` / `Player123!` (same as `DEFAULT_PASSWORDS.player`)
 - Re-run safe in dev; for prod only run against disposable environments.
 
 ## Build & Deploy Workflow
@@ -35,6 +43,7 @@
 - Build scripts use `npx nest` so no global Nest CLI install is required.
 - Use the new clean helper to avoid ENOTEMPTY errors: `npm run clean` followed by `npm run build` (the build script already runs clean first).
 - If you must rebuild while the watcher is running, kill the watcher or remove `dist/` manually; otherwise the Nest CLI cannot clear the folder.
+- If you see `EADDRINUSE` on port 8080, stop the previous process or set `PORT` to a free value.
 
 ## Incident Flow
 1. Hit `/health` and `/ready` to confirm infra.
