@@ -25,7 +25,7 @@
 - Sign-in admin (no tenant header needed):
   - `curl -i -c cookies.txt -H "Content-Type: application/json" -d '{"email":"admin@demo.smartranking","password":"Admin123!"}' http://localhost:8080/api/auth/sign-in/email`
 - Sign-in player (no tenant header needed):
-  - `curl -i -c cookies.txt -H "Content-Type: application/json" -d '{"email":"player@demo.smartranking","password":"Player123!"}' http://localhost:8080/api/auth/sign-in/email`
+  - `curl -i -c cookies.txt -H "Content-Type: application/json" -d '{"email":"alex.costa@demo.smartranking","password":"Admin123!"}' http://localhost:8080/api/auth/sign-in/email`
 - Fetch profile (tenant required):
   - `curl -i -b cookies.txt -H "x-tenant-id: <clubId>" http://localhost:8080/api/v1/users/me`
 
@@ -35,7 +35,7 @@
 - Auth credentials (also emitted in logs under `seed.summary`):
   - Admin `admin@demo.smartranking` / `Admin123!`
   - Club managers `club.demo@demo.smartranking` & `club.laguna@demo.smartranking` / `Club123!`
-  - Player `player@demo.smartranking` / `Player123!`
+  - Player `alex.costa@demo.smartranking` / `Admin123!` (same as `DEFAULT_PASSWORDS.admin`)
 - Re-run safe in dev; for prod only run against disposable environments.
 
 ## Build & Deploy Workflow
