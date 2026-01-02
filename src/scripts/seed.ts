@@ -98,10 +98,14 @@ const DEFAULT_PASSWORDS = {
 const SEED_TENANT_ID = process.env.SEED_TENANT_ID?.trim();
 
 const PLAYER_ACCOUNT: SeedUserInput = {
-  email: 'player@demo.smartranking',
-  password: DEFAULT_PASSWORDS.player,
-  name: 'Demo Player',
+  email: 'alex.costa@demo.smartranking',
+  password: DEFAULT_PASSWORDS.admin,
+  name: 'Alex Costa',
 };
+
+const DEFAULT_DEMO_TENANT_ID = 'c200089015ba5b82cb085271';
+const DEMO_TENANT_ID =
+  process.env.SEED_TENANT_ID?.trim() || DEFAULT_DEMO_TENANT_ID;
 
 const CLUB_SEEDS: ClubSeedPlan[] = [
   {
@@ -541,21 +545,69 @@ async function ensureCategories(
 ): Promise<Record<string, Category>> {
   const categories: Record<string, Category> = {};
   for (const definition of plan.categories) {
-    let category = await categoryModel
-      .findOne({ category: definition.code, clubId: club._id })
+    const category = await categoryModel
+      .findOne({ category: definition.code })
       .exec();
     if (!category) {
-      const payload = {
-        category: definition.code,
-        description: definition.description,
-        clubId: club._id,
-        players: [],
-        tenant: tenantId,
-      } as unknown as Category & { tenant: string };
-      category = await categoryModel.create(payload);
-    } else if (category.description !== definition.description) {
-      category.description = definition.description;
-      await category.save();
+      await categoryModel
+        .updateOne(
+          { category: definition.code },
+          {
+            $setOnInsert: {
+              category: definition.code,
+              description: definition.description,
+              clubId: club._id,
+              players: [],
+              tenant: tenantId,
+            },
+          },
+          { upsert: true },
+        )
+        .exec();
+      const created = await categoryModel
+        .findOne({ category: definition.code })
+        .exec();
+      if (created) {
+        categories[definition.code] = created as Category;
+      }
+      continue;
+    }
+
+    const categoryTenant = category.tenant as string | undefined;
+    const categoryClubId = category.clubId?.toString();
+    const expectedClubId = club._id?.toString();
+    const scopeMatches =
+      categoryTenant === tenantId && categoryClubId === expectedClubId;
+    if (!scopeMatches) {
+      const isDev = process.env.NODE_ENV !== 'production';
+      if (isDev) {
+        // eslint-disable-next-line no-console
+        console.warn('Seed category scope mismatch', {
+          category: definition.code,
+          tenantId,
+          clubId: expectedClubId,
+          existingTenant: categoryTenant ?? null,
+          existingClubId: categoryClubId ?? null,
+        });
+      }
+      categories[definition.code] = category as Category;
+      continue;
+    }
+
+    if (category.description !== definition.description) {
+      await categoryModel
+        .updateOne(
+          { _id: category._id },
+          { $set: { description: definition.description } },
+        )
+        .exec();
+      const updated = await categoryModel
+        .findOne({ _id: category._id })
+        .exec();
+      if (updated) {
+        categories[definition.code] = updated as Category;
+        continue;
+      }
     }
     categories[definition.code] = category as Category;
   }
@@ -717,13 +769,11 @@ function deterministicObjectId(seed: string): string {
 }
 
 function resolveTenantId(plan: ClubSeedPlan): string {
-  if (SEED_TENANT_ID) {
-    if (CLUB_SEEDS.length === 1) {
-      return SEED_TENANT_ID;
-    }
-    return deterministicObjectId(`${SEED_TENANT_ID}-${plan.slug}`);
+  const primarySlug = CLUB_SEEDS[0]?.slug;
+  if (plan.slug === primarySlug) {
+    return DEMO_TENANT_ID;
   }
-  return deterministicObjectId(plan.slug);
+  return deterministicObjectId(`${DEMO_TENANT_ID}-${plan.slug}`);
 }
 
 async function seedAuthUsers(): Promise<SeededAccounts> {
@@ -743,6 +793,7 @@ async function seedAuthUsers(): Promise<SeededAccounts> {
 }
 
 async function ensureAuthUser(credentials: SeedUserInput): Promise<SeededUser> {
+  const isDev = process.env.NODE_ENV !== 'production';
   try {
     const result = await auth.api?.signUpEmail({
       body: {
@@ -759,18 +810,44 @@ async function ensureAuthUser(credentials: SeedUserInput): Promise<SeededUser> {
       throw error;
     }
   }
-  const fallback = await auth.api?.signInEmail({
-    body: { email: credentials.email, password: credentials.password },
-  });
+  const fallback = await trySignIn(credentials);
   if (fallback?.user?.id) {
     return { id: fallback.user.id, email: fallback.user.email };
   }
+
   const context = await auth.$context;
   const existing = await context.internalAdapter.findUserByEmail(
     credentials.email,
+    { includeAccounts: true },
   );
+  if (existing?.user?.id && isDev && context.password?.hash) {
+    const hashedPassword = await context.password.hash(credentials.password);
+    const credentialAccount = existing.accounts?.find(
+      (account) => account.providerId === 'credential',
+    );
+    if (!credentialAccount) {
+      await context.internalAdapter.createAccount({
+        userId: existing.user.id,
+        providerId: 'credential',
+        password: hashedPassword,
+        accountId: existing.user.id,
+      });
+    } else {
+      await context.internalAdapter.updatePassword(
+        existing.user.id,
+        hashedPassword,
+      );
+    }
+    const refreshed = await trySignIn(credentials);
+    if (refreshed?.user?.id) {
+      return { id: refreshed.user.id, email: refreshed.user.email };
+    }
+  }
+
   if (existing?.user?.id) {
-    return { id: existing.user.id, email: existing.user.email } as SeededUser;
+    throw new Error(
+      `Auth user exists but password did not match for ${credentials.email}`,
+    );
   }
   throw new Error(`Unable to provision auth user for ${credentials.email}`);
 }
@@ -780,6 +857,20 @@ function isUserExistsError(error: unknown): boolean {
   const status = (error as { status?: string; statusCode?: number }).status;
   const statusCode = (error as { statusCode?: number }).statusCode;
   return status === 'UNPROCESSABLE_ENTITY' || statusCode === 422;
+}
+
+async function trySignIn(
+  credentials: SeedUserInput,
+): Promise<{ user?: SeededUser } | null> {
+  try {
+    return (
+      (await auth.api?.signInEmail({
+        body: { email: credentials.email, password: credentials.password },
+      })) ?? null
+    );
+  } catch {
+    return null;
+  }
 }
 
 async function upsertProfiles(
@@ -893,7 +984,7 @@ function logSummary(
       featuredPlayer: {
         id: accounts.featuredPlayer.id,
         email: accounts.featuredPlayer.email,
-        password: DEFAULT_PASSWORDS.player,
+        password: DEFAULT_PASSWORDS.admin,
         clubId: seededClubs[0]
           ? toStringId(seededClubs[0].club._id, 'club')
           : undefined,
@@ -902,6 +993,7 @@ function logSummary(
           : undefined,
       },
     },
+    seedTenantId: DEMO_TENANT_ID,
     seedTenantOverride: SEED_TENANT_ID ?? null,
   });
 }
