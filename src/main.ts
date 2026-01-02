@@ -32,6 +32,27 @@ type AuthLogResponse = Response & {
   write: Response['write'];
   end: Response['end'];
 };
+type JsonRecord = Record<string, unknown>;
+
+const isRecord = (value: unknown): value is JsonRecord =>
+  Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const asString = (value: unknown): string | null =>
+  typeof value === 'string' ? value : null;
+
+const parseJson = (payload: string): unknown => {
+  try {
+    return JSON.parse(payload) as unknown;
+  } catch {
+    return null;
+  }
+};
+
+const toBuffer = (chunk: unknown): Buffer | null => {
+  if (Buffer.isBuffer(chunk)) return chunk;
+  if (typeof chunk === 'string') return Buffer.from(chunk);
+  return null;
+};
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -106,43 +127,45 @@ async function bootstrap(): Promise<void> {
     (req: AuthLogRequest, res: AuthLogResponse, next: NextFunction) => {
       let rawBody = '';
       req.on('data', (chunk) => {
-        rawBody += chunk.toString();
+        const buffer = toBuffer(chunk);
+        if (buffer) {
+          rawBody += buffer.toString('utf8');
+        }
       });
       req.on('end', () => {
         if (!rawBody) return;
-        try {
-          const parsed = JSON.parse(rawBody) as { email?: string };
-          req._authEmail = parsed.email ?? null;
-        } catch {
-          req._authEmail = null;
+        const parsed = parseJson(rawBody);
+        if (isRecord(parsed)) {
+          const email = asString(parsed.email);
+          req._authEmail = email ?? null;
+          return;
         }
+        req._authEmail = null;
       });
 
       const chunks: Buffer[] = [];
       const originalWrite = res.write.bind(res);
       const originalEnd = res.end.bind(res);
       res.write = ((chunk, ...args) => {
-        if (chunk) {
-          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        const buffer = toBuffer(chunk);
+        if (buffer) {
           chunks.push(buffer);
         }
         return originalWrite(chunk, ...args);
       }) as Response['write'];
       res.end = ((chunk, ...args) => {
-        if (chunk) {
-          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        const buffer = toBuffer(chunk);
+        if (buffer) {
           chunks.push(buffer);
         }
         if (res.statusCode >= 400) {
           const responseBody = Buffer.concat(chunks).toString('utf8');
           let reason = responseBody;
-          try {
-            const parsed = JSON.parse(responseBody) as
-              | { error?: string; message?: string }
-              | undefined;
-            reason = parsed?.error ?? parsed?.message ?? responseBody;
-          } catch {
-            // keep raw response body as reason
+          const parsed = parseJson(responseBody);
+          if (isRecord(parsed)) {
+            const errorMessage = asString(parsed.error);
+            const message = asString(parsed.message);
+            reason = errorMessage ?? message ?? responseBody;
           }
           appLogger.warn('auth.signin.failed', {
             requestId: req.requestId,

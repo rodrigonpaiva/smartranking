@@ -39,6 +39,27 @@ describe('Categories contract e2e', () => {
   let playerId: string;
   let memoryUnavailable = false;
 
+  type CategoryDTO = {
+    _id: string;
+    category: string;
+    clubId: string;
+  };
+
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+  const isCategoryDTO = (value: unknown): value is CategoryDTO => {
+    if (!isRecord(value)) return false;
+    return (
+      typeof value._id === 'string' &&
+      typeof value.category === 'string' &&
+      typeof value.clubId === 'string'
+    );
+  };
+
+  const isCategoryDTOArray = (value: unknown): value is CategoryDTO[] =>
+    Array.isArray(value) && value.every(isCategoryDTO);
+
   beforeAll(async () => {
     try {
       mongoServer = await MongoMemoryServer.create();
@@ -128,11 +149,15 @@ describe('Categories contract e2e', () => {
       })
       .expect(200);
 
-    expect(Array.isArray(response.body)).toBe(true);
-    expect(response.body.length).toBeGreaterThan(0);
-    expect(response.body[0]).toHaveProperty('_id');
-    expect(response.body[0]).toHaveProperty('category');
-    expect(response.body[0]).toHaveProperty('clubId');
+    const body: unknown = response.body;
+    expect(isCategoryDTOArray(body)).toBe(true);
+    if (!isCategoryDTOArray(body)) {
+      throw new Error('Expected categories array payload');
+    }
+    expect(body.length).toBeGreaterThan(0);
+    expect(body[0]._id).toBeDefined();
+    expect(body[0].category).toBeDefined();
+    expect(body[0].clubId).toBeDefined();
   });
 
   it('GET /api/v1/categories/my returns a raw array', async () => {
@@ -150,10 +175,14 @@ describe('Categories contract e2e', () => {
       })
       .expect(200);
 
-    expect(Array.isArray(response.body)).toBe(true);
-    expect(response.body.length).toBeGreaterThan(0);
-    expect(response.body[0]).toHaveProperty('_id');
-    expect(response.body[0]).toHaveProperty('category');
-    expect(response.body[0]).toHaveProperty('clubId');
+    const body: unknown = response.body;
+    expect(isCategoryDTOArray(body)).toBe(true);
+    if (!isCategoryDTOArray(body)) {
+      throw new Error('Expected categories array payload');
+    }
+    expect(body.length).toBeGreaterThan(0);
+    expect(body[0]._id).toBeDefined();
+    expect(body[0].category).toBeDefined();
+    expect(body[0].clubId).toBeDefined();
   });
 });
