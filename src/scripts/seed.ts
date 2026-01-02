@@ -102,7 +102,7 @@ const SEED_TENANT_ID = process.env.SEED_TENANT_ID?.trim();
 
 const PLAYER_ACCOUNT: SeedUserInput = {
   email: 'alex.costa@demo.smartranking',
-  password: DEFAULT_PASSWORDS.admin,
+  password: DEFAULT_PASSWORDS.player,
   name: 'Alex Costa',
 };
 
