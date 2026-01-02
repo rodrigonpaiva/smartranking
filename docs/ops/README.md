@@ -43,6 +43,7 @@
 - Build scripts use `npx nest` so no global Nest CLI install is required.
 - Use the new clean helper to avoid ENOTEMPTY errors: `npm run clean` followed by `npm run build` (the build script already runs clean first).
 - If you must rebuild while the watcher is running, kill the watcher or remove `dist/` manually; otherwise the Nest CLI cannot clear the folder.
+- If you see `EADDRINUSE` on port 8080, stop the previous process or set `PORT` to a free value.
 
 ## Incident Flow
 1. Hit `/health` and `/ready` to confirm infra.
