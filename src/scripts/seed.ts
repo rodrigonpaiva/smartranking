@@ -445,9 +445,9 @@ async function bootstrap(): Promise<void> {
   try {
     const logger = app.get(StructuredLoggerService);
     const clubModel = app.get<Model<Club>>(getModelToken('Club'));
-  const categoryModel = app.get<Model<CategoryDocument>>(
-    getModelToken('Category'),
-  );
+    const categoryModel = app.get<Model<CategoryDocument>>(
+      getModelToken('Category'),
+    );
     const playerModel = app.get<Model<Player>>(getModelToken('Player'));
     const matchModel = app.get<Model<Match>>(getModelToken('Match'));
     const matchesService = app.get(MatchesService);
@@ -555,8 +555,8 @@ async function ensureCategories(
       .findOne({ category: definition.code })
       .exec();
     if (!category) {
-      await categoryModel
-        .updateOne(
+      const created = await categoryModel
+        .findOneAndUpdate(
           { category: definition.code },
           {
             $setOnInsert: {
@@ -567,11 +567,8 @@ async function ensureCategories(
               tenant: tenantId,
             },
           },
-          { upsert: true },
+          { upsert: true, new: true, setDefaultsOnInsert: true },
         )
-        .exec();
-      const created = await categoryModel
-        .findOne({ category: definition.code })
         .exec();
       if (created) {
         categories[definition.code] = created;
@@ -587,7 +584,6 @@ async function ensureCategories(
     if (!scopeMatches) {
       const isDev = process.env.NODE_ENV !== 'production';
       if (isDev) {
-        // eslint-disable-next-line no-console
         console.warn('Seed category scope mismatch', {
           category: definition.code,
           tenantId,
@@ -607,9 +603,7 @@ async function ensureCategories(
           { $set: { description: definition.description } },
         )
         .exec();
-      const updated = await categoryModel
-        .findOne({ _id: category._id })
-        .exec();
+      const updated = await categoryModel.findOne({ _id: category._id }).exec();
       if (updated) {
         categories[definition.code] = updated;
         continue;
@@ -1004,7 +998,7 @@ function logSummary(
       featuredPlayer: {
         id: accounts.featuredPlayer.id,
         email: accounts.featuredPlayer.email,
-        password: DEFAULT_PASSWORDS.admin,
+        password: DEFAULT_PASSWORDS.player,
         clubId: seededClubs[0]
           ? toStringId(seededClubs[0].club._id, 'club')
           : undefined,

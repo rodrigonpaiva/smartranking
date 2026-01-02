@@ -113,16 +113,12 @@ describe('Categories contract e2e', () => {
         });
         playerId = player._id.toString();
 
-        const category = await categoryModel.create({
+        await categoryModel.create({
           category: 'PADEL_MIXED',
           description: 'Padel Mixed',
           clubId: clubObjectId,
           players: [player._id],
         });
-        await categoryModel.updateOne(
-          { _id: category._id },
-          { $set: { players: [player._id] } },
-        );
       },
     );
   });

@@ -102,7 +102,7 @@ Run `npm run seed` to bootstrap a realistic tenant:
   - `admin@demo.smartranking` / `Admin123!`
   - `club.demo@demo.smartranking` / `Club123!`
   - `club.laguna@demo.smartranking` / `Club123!`
-  - `alex.costa@demo.smartranking` / `Admin123!`
+  - `alex.costa@demo.smartranking` / `Player123!`
 - Sample players, categories, and matches are created so ranking endpoints have
   data out of the box
 

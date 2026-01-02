@@ -33,6 +33,7 @@ type AuthLogResponse = Response & {
   end: Response['end'];
 };
 type JsonRecord = Record<string, unknown>;
+type BufferEncoding = NodeJS.BufferEncoding;
 
 const isRecord = (value: unknown): value is JsonRecord =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -53,6 +54,35 @@ const toBuffer = (chunk: unknown): Buffer | null => {
   if (typeof chunk === 'string') return Buffer.from(chunk);
   return null;
 };
+
+const normalizeWriteArgs = (
+  args: unknown[],
+): { encoding?: BufferEncoding; callback?: (err?: Error) => void } => {
+  const [encoding, callback] = args;
+  return {
+    encoding: isBufferEncoding(encoding) ? encoding : undefined,
+    callback: isWriteCallback(callback) ? callback : undefined,
+  };
+};
+
+const normalizeEndArgs = (
+  args: unknown[],
+): { encoding?: BufferEncoding; callback?: () => void } => {
+  const [encoding, callback] = args;
+  return {
+    encoding: isBufferEncoding(encoding) ? encoding : undefined,
+    callback: isEndCallback(callback) ? callback : undefined,
+  };
+};
+
+const isWriteCallback = (value: unknown): value is (err?: Error) => void =>
+  typeof value === 'function';
+
+const isEndCallback = (value: unknown): value is () => void =>
+  typeof value === 'function';
+
+const isBufferEncoding = (value: unknown): value is BufferEncoding =>
+  typeof value === 'string' && Buffer.isEncoding(value);
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -124,34 +154,42 @@ async function bootstrap(): Promise<void> {
   httpAdapter.use(/\/api\/auth(\/.*)?$/, authRateLimiter);
   httpAdapter.use(
     '/api/auth/sign-in/email',
+    express.json({ type: 'application/json' }),
+  );
+  httpAdapter.use(
+    '/api/auth/sign-in/email',
     (req: AuthLogRequest, res: AuthLogResponse, next: NextFunction) => {
-      let rawBody = '';
-      req.on('data', (chunk) => {
-        const buffer = toBuffer(chunk);
-        if (buffer) {
-          rawBody += buffer.toString('utf8');
-        }
-      });
-      req.on('end', () => {
-        if (!rawBody) return;
-        const parsed = parseJson(rawBody);
-        if (isRecord(parsed)) {
-          const email = asString(parsed.email);
-          req._authEmail = email ?? null;
-          return;
-        }
+      const body = (req as { body?: unknown }).body;
+      const parsed =
+        typeof body === 'string' ? parseJson(body) : (body ?? null);
+      if (isRecord(parsed)) {
+        const email = asString(parsed.email);
+        req._authEmail = email ?? null;
+      } else {
         req._authEmail = null;
-      });
+      }
 
       const chunks: Buffer[] = [];
-      const originalWrite = res.write.bind(res);
-      const originalEnd = res.end.bind(res);
+      const originalWrite = res.write.bind(res) as (
+        chunk: Buffer | string,
+        encoding?: BufferEncoding,
+        callback?: (err?: Error) => void,
+      ) => boolean;
+      const originalEnd = res.end.bind(res) as (
+        chunk?: Buffer | string,
+        encoding?: BufferEncoding,
+        callback?: () => void,
+      ) => void;
       res.write = ((chunk, ...args) => {
         const buffer = toBuffer(chunk);
         if (buffer) {
           chunks.push(buffer);
         }
-        return originalWrite(chunk, ...args);
+        if (Buffer.isBuffer(chunk) || typeof chunk === 'string') {
+          const normalized = normalizeWriteArgs(args);
+          return originalWrite(chunk, normalized.encoding, normalized.callback);
+        }
+        return originalWrite('', undefined, undefined);
       }) as Response['write'];
       res.end = ((chunk, ...args) => {
         const buffer = toBuffer(chunk);
@@ -175,7 +213,12 @@ async function bootstrap(): Promise<void> {
             reason,
           });
         }
-        return originalEnd(chunk, ...args);
+        if (Buffer.isBuffer(chunk) || typeof chunk === 'string') {
+          const normalized = normalizeEndArgs(args);
+          return originalEnd(chunk, normalized.encoding, normalized.callback);
+        }
+        const normalized = normalizeEndArgs(args);
+        return originalEnd(undefined, normalized.encoding, normalized.callback);
       }) as Response['end'];
 
       next();

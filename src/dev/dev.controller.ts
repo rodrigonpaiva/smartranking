@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { auth } from '../auth/auth';
+import { Public } from '../auth/public.decorator';
 import { StructuredLoggerService } from '../common/logger/logger.service';
 
 type AuthUserLookupResponse = {
@@ -22,6 +23,7 @@ export class DevController {
   constructor(private readonly logger: StructuredLoggerService) {}
 
   @Get('auth-user')
+  @Public()
   async getAuthUser(
     @Query('email') email: string | undefined,
     @Req() req: Request,
@@ -52,7 +54,9 @@ export class DevController {
       exists: true,
       userId: user.id,
       email: user.email,
-      createdAt: user.createdAt ? new Date(user.createdAt).toISOString() : undefined,
+      createdAt: user.createdAt
+        ? new Date(user.createdAt).toISOString()
+        : undefined,
     };
   }
 
