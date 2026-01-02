@@ -16,6 +16,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { LoggerModule } from './common/logger/logger.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { HealthModule } from './health/health.module';
+import { DevModule } from './dev/dev.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { HealthModule } from './health/health.module';
     CategoriesModule,
     UsersModule,
     MatchesModule,
+    DevModule,
   ],
   controllers: [],
   providers: [

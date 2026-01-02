@@ -21,6 +21,14 @@
 - **Tenant scoping**: ensure seed/test calls include `x-tenant-id=<clubId>`; logs will show the resolved tenant under `tenantId`.
 - **Validation errors (400)**: response includes `error.message` with class-validator output; cross-check DTOs in `src/**/dtos`.
 
+## Auth Validation (Manual)
+- Sign-in admin (no tenant header needed):
+  - `curl -i -c cookies.txt -H "Content-Type: application/json" -d '{"email":"admin@demo.smartranking","password":"Admin123!"}' http://localhost:8080/api/auth/sign-in/email`
+- Sign-in player (no tenant header needed):
+  - `curl -i -c cookies.txt -H "Content-Type: application/json" -d '{"email":"player@demo.smartranking","password":"Player123!"}' http://localhost:8080/api/auth/sign-in/email`
+- Fetch profile (tenant required):
+  - `curl -i -b cookies.txt -H "x-tenant-id: <clubId>" http://localhost:8080/api/v1/users/me`
+
 ## Seeds & Sample Data
 - Command: `npm run seed:dev` (idempotent).
 - Creates: 1 system admin, 2 tenant-isolated clubs (`demo-tennis-club`, `laguna-padel-club`), 10+ players per club, categories with assignments, and featured matches per club.

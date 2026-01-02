@@ -27,6 +27,11 @@ type RequestWithUser = Request & { user?: { id?: string } | null };
 type GetSessionFn = (payload: {
   headers: Request['headers'];
 }) => Promise<{ user?: { id?: string } } | null>;
+type AuthLogRequest = Request & { _authEmail?: string | null };
+type AuthLogResponse = Response & {
+  write: Response['write'];
+  end: Response['end'];
+};
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -96,6 +101,63 @@ async function bootstrap(): Promise<void> {
   });
   httpAdapter.use('/api/auth', authRateLimiter);
   httpAdapter.use(/\/api\/auth(\/.*)?$/, authRateLimiter);
+  httpAdapter.use(
+    '/api/auth/sign-in/email',
+    (req: AuthLogRequest, res: AuthLogResponse, next: NextFunction) => {
+      let rawBody = '';
+      req.on('data', (chunk) => {
+        rawBody += chunk.toString();
+      });
+      req.on('end', () => {
+        if (!rawBody) return;
+        try {
+          const parsed = JSON.parse(rawBody) as { email?: string };
+          req._authEmail = parsed.email ?? null;
+        } catch {
+          req._authEmail = null;
+        }
+      });
+
+      const chunks: Buffer[] = [];
+      const originalWrite = res.write.bind(res);
+      const originalEnd = res.end.bind(res);
+      res.write = ((chunk, ...args) => {
+        if (chunk) {
+          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          chunks.push(buffer);
+        }
+        return originalWrite(chunk, ...args);
+      }) as Response['write'];
+      res.end = ((chunk, ...args) => {
+        if (chunk) {
+          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          chunks.push(buffer);
+        }
+        if (res.statusCode >= 400) {
+          const responseBody = Buffer.concat(chunks).toString('utf8');
+          let reason = responseBody;
+          try {
+            const parsed = JSON.parse(responseBody) as
+              | { error?: string; message?: string }
+              | undefined;
+            reason = parsed?.error ?? parsed?.message ?? responseBody;
+          } catch {
+            // keep raw response body as reason
+          }
+          appLogger.warn('auth.signin.failed', {
+            requestId: req.requestId,
+            email: req._authEmail ?? null,
+            tenantId: req.headers['x-tenant-id'] ?? null,
+            statusCode: res.statusCode,
+            reason,
+          });
+        }
+        return originalEnd(chunk, ...args);
+      }) as Response['end'];
+
+      next();
+    },
+  );
   const authHandler: RequestHandler = toNodeHandler(auth);
   httpAdapter.all('/api/auth', authHandler);
   httpAdapter.all(/\/api\/auth(\/.*)?$/, authHandler);
