@@ -76,20 +76,8 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  const allowedOrigins = [
-    process.env.FRONTEND_URL,
-    process.env.BETTER_AUTH_URL,
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'http://localhost:8080',
-  ].filter(Boolean) as string[];
   const corsOptions: CorsOptions = {
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      return callback(null, false);
-    },
+    origin: 'http://localhost:5173',
     credentials: true,
     allowedHeaders: ['Content-Type', 'x-tenant-id', 'x-request-id'],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

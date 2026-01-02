@@ -95,6 +95,8 @@ const DEFAULT_PASSWORDS = {
   player: 'Player123!',
 };
 
+const SEED_TENANT_ID = process.env.SEED_TENANT_ID?.trim();
+
 const PLAYER_ACCOUNT: SeedUserInput = {
   email: 'player@demo.smartranking',
   password: DEFAULT_PASSWORDS.player,
@@ -433,59 +435,72 @@ async function bootstrap(): Promise<void> {
     bufferLogs: true,
   });
 
-  const logger = app.get(StructuredLoggerService);
-  const clubModel = app.get<Model<Club>>(getModelToken('Club'));
-  const categoryModel = app.get<Model<Category>>(getModelToken('Category'));
-  const playerModel = app.get<Model<Player>>(getModelToken('Player'));
-  const matchModel = app.get<Model<Match>>(getModelToken('Match'));
-  const matchesService = app.get(MatchesService);
-  const profilesService = app.get(UserProfilesService);
+  try {
+    const logger = app.get(StructuredLoggerService);
+    const clubModel = app.get<Model<Club>>(getModelToken('Club'));
+    const categoryModel = app.get<Model<Category>>(getModelToken('Category'));
+    const playerModel = app.get<Model<Player>>(getModelToken('Player'));
+    const matchModel = app.get<Model<Match>>(getModelToken('Match'));
+    const matchesService = app.get(MatchesService);
+    const profilesService = app.get(UserProfilesService);
 
-  const accounts = await seedAuthUsers();
-  const seededClubs: SeededClubContext[] = [];
+    const accounts = await seedAuthUsers();
+    const seededClubs: SeededClubContext[] = [];
 
-  for (const plan of CLUB_SEEDS) {
-    const tenantId = deterministicObjectId(plan.slug);
-    await tenancyContext.run(
-      {
-        tenant: tenantId,
-        allowMissingTenant: false,
-        disableTenancy: false,
-      },
-      async () => {
-        const club = await ensureClub(clubModel, plan, tenantId);
-        const categories = await ensureCategories(categoryModel, plan, club);
-        const players = await ensurePlayers(playerModel, plan, club);
-        await assignPlayersToCategories(
-          categoryModel,
-          categories,
-          plan,
-          players,
-        );
-        await seedMatchesForPlan(
-          matchesService,
-          matchModel,
-          plan,
-          club,
-          categories,
-          players,
-          accounts.systemAdmin.id,
-          tenantId,
-        );
-        seededClubs.push({
-          plan,
-          club,
-          players,
-          categories,
-          tenantId,
-        });
-      },
-    );
+    for (const plan of CLUB_SEEDS) {
+      const tenantId = resolveTenantId(plan);
+      await tenancyContext.run(
+        {
+          tenant: tenantId,
+          allowMissingTenant: false,
+          disableTenancy: false,
+        },
+        async () => {
+          const club = await ensureClub(clubModel, plan, tenantId);
+          const categories = await ensureCategories(
+            categoryModel,
+            plan,
+            club,
+            tenantId,
+          );
+          const players = await ensurePlayers(
+            playerModel,
+            plan,
+            club,
+            tenantId,
+          );
+          await assignPlayersToCategories(
+            categoryModel,
+            categories,
+            plan,
+            players,
+          );
+          await seedMatchesForPlan(
+            matchesService,
+            matchModel,
+            plan,
+            club,
+            categories,
+            players,
+            accounts.systemAdmin.id,
+            tenantId,
+          );
+          seededClubs.push({
+            plan,
+            club,
+            players,
+            categories,
+            tenantId,
+          });
+        },
+      );
+    }
+
+    await upsertProfiles(profilesService, seededClubs, accounts);
+    logSummary(logger, seededClubs, accounts);
+  } finally {
+    await app.close();
   }
-
-  await upsertProfiles(profilesService, seededClubs, accounts);
-  logSummary(logger, seededClubs, accounts);
-  await app.close();
 }
 
 async function ensureClub(
@@ -499,21 +514,30 @@ async function ensureClub(
     city: plan.city,
     state: plan.state,
   };
-  const setOnInsert = { _id: new Types.ObjectId(tenantId) };
-  const club = await clubModel
-    .findOneAndUpdate(
-      { slug: plan.slug },
-      { $set: base, $setOnInsert: setOnInsert },
-      { upsert: true, new: true },
-    )
-    .exec();
-  return club as Club;
+  const existing = await clubModel.findOne({ slug: plan.slug }).exec();
+  if (!existing) {
+    const payload = {
+      ...base,
+      tenant: tenantId,
+      _id: new Types.ObjectId(tenantId),
+    } as unknown as Club & { tenant: string };
+    const created = new clubModel(payload);
+    return (await created.save()) as Club;
+  }
+  const hasChanges = (Object.keys(base) as Array<keyof typeof base>).some(
+    (key) => existing[key] !== base[key],
+  );
+  if (hasChanges) {
+    await clubModel.updateOne({ _id: existing._id }, { $set: base }).exec();
+  }
+  return existing as Club;
 }
 
 async function ensureCategories(
   categoryModel: Model<Category>,
   plan: ClubSeedPlan,
   club: Club,
+  tenantId: string,
 ): Promise<Record<string, Category>> {
   const categories: Record<string, Category> = {};
   for (const definition of plan.categories) {
@@ -521,12 +545,14 @@ async function ensureCategories(
       .findOne({ category: definition.code, clubId: club._id })
       .exec();
     if (!category) {
-      category = await categoryModel.create({
+      const payload = {
         category: definition.code,
         description: definition.description,
         clubId: club._id,
         players: [],
-      });
+        tenant: tenantId,
+      } as unknown as Category & { tenant: string };
+      category = await categoryModel.create(payload);
     } else if (category.description !== definition.description) {
       category.description = definition.description;
       await category.save();
@@ -540,16 +566,34 @@ async function ensurePlayers(
   playerModel: Model<Player>,
   plan: ClubSeedPlan,
   club: Club,
+  tenantId: string,
 ): Promise<Player[]> {
   const players: Player[] = [];
   for (const seed of plan.players) {
-    const player = await playerModel
-      .findOneAndUpdate(
-        { email: seed.email, clubId: club._id },
-        { $set: { ...seed, clubId: club._id } },
-        { upsert: true, new: true },
-      )
+    let player = await playerModel
+      .findOne({ email: seed.email, clubId: club._id })
       .exec();
+    if (!player) {
+      const payload = {
+        ...seed,
+        clubId: club._id,
+        tenant: tenantId,
+      } as unknown as Player & { tenant: string };
+      player = await playerModel.create(payload);
+    } else {
+      const updates: Partial<{ name: string; phone: string }> = {};
+      if (player.name !== seed.name) {
+        updates.name = seed.name;
+      }
+      if (player.phone !== seed.phone) {
+        updates.phone = seed.phone;
+      }
+      if (Object.keys(updates).length > 0) {
+        await playerModel
+          .updateOne({ _id: player._id }, { $set: updates })
+          .exec();
+      }
+    }
     players.push(player as Player);
   }
   return players;
@@ -611,18 +655,40 @@ async function seedMatchesForPlan(
         toStringId(players[playerIndex]?._id, 'player'),
       ),
     }));
-    const payload: CreateMatchDto = {
-      categoryId,
-      clubId,
-      format: matchSeed.format,
-      bestOf: matchSeed.bestOf,
-      decidingSetType: matchSeed.decidingSetType,
-      teams,
-      sets: matchSeed.sets,
-      playedAt: matchSeed.playedAt,
-    };
+    const payload = withTenant<CreateMatchDto>(
+      tenantId,
+      {
+        categoryId,
+        clubId,
+        format: matchSeed.format,
+        bestOf: matchSeed.bestOf,
+        decidingSetType: matchSeed.decidingSetType,
+        teams,
+        sets: matchSeed.sets,
+        playedAt: matchSeed.playedAt,
+      },
+      'Match',
+    );
     await matchesService.createMatch(payload, adminContext);
   }
+}
+
+function withTenant<T extends object>(
+  tenantId: string,
+  payload: T,
+  label: string,
+): T & { tenant: string } {
+  if (!tenantId) {
+    throw new Error(`Seed tenantId missing for ${label}`);
+  }
+  const payloadRecord = payload as Record<string, unknown>;
+  if ('tenant' in payloadRecord) {
+    const existing = payloadRecord.tenant;
+    if (existing && existing !== tenantId) {
+      throw new Error(`Seed payload tenant mismatch for ${label}`);
+    }
+  }
+  return { ...payload, tenant: tenantId } as T & { tenant: string };
 }
 
 function toStringId(value: unknown, label: string): string {
@@ -648,6 +714,16 @@ function toStringId(value: unknown, label: string): string {
 function deterministicObjectId(seed: string): string {
   const hash = createHash('sha1').update(seed).digest('hex').substring(0, 24);
   return new Types.ObjectId(hash).toHexString();
+}
+
+function resolveTenantId(plan: ClubSeedPlan): string {
+  if (SEED_TENANT_ID) {
+    if (CLUB_SEEDS.length === 1) {
+      return SEED_TENANT_ID;
+    }
+    return deterministicObjectId(`${SEED_TENANT_ID}-${plan.slug}`);
+  }
+  return deterministicObjectId(plan.slug);
 }
 
 async function seedAuthUsers(): Promise<SeededAccounts> {
@@ -711,41 +787,80 @@ async function upsertProfiles(
   seededClubs: SeededClubContext[],
   accounts: SeededAccounts,
 ): Promise<void> {
-  const adminContext: AccessContext = {
-    userId: accounts.systemAdmin.id,
-    role: Roles.SYSTEM_ADMIN,
-    tenantId: null,
-  };
-  await profilesService.upsertProfile(
-    { userId: accounts.systemAdmin.id, role: Roles.SYSTEM_ADMIN },
-    adminContext,
-  );
+  const primaryClub = seededClubs[0];
+  if (primaryClub) {
+    await tenancyContext.run(
+      {
+        tenant: primaryClub.tenantId,
+        allowMissingTenant: false,
+        disableTenancy: false,
+      },
+      async () => {
+        const adminContext: AccessContext = {
+          userId: accounts.systemAdmin.id,
+          role: Roles.SYSTEM_ADMIN,
+          tenantId: primaryClub.tenantId,
+        };
+        await profilesService.upsertProfile(
+          { userId: accounts.systemAdmin.id, role: Roles.SYSTEM_ADMIN },
+          adminContext,
+        );
+      },
+    );
+  }
 
   for (const seeded of seededClubs) {
     const manager = accounts.clubManagers[seeded.plan.slug];
     if (!manager) {
       continue;
     }
-    await profilesService.upsertProfile(
+    await tenancyContext.run(
       {
-        userId: manager.id,
-        role: Roles.CLUB,
-        clubId: toStringId(seeded.club._id, 'club'),
+        tenant: seeded.tenantId,
+        allowMissingTenant: false,
+        disableTenancy: false,
       },
-      adminContext,
+      async () => {
+        const adminContext: AccessContext = {
+          userId: accounts.systemAdmin.id,
+          role: Roles.SYSTEM_ADMIN,
+          tenantId: seeded.tenantId,
+        };
+        await profilesService.upsertProfile(
+          {
+            userId: manager.id,
+            role: Roles.CLUB,
+            clubId: toStringId(seeded.club._id, 'club'),
+          },
+          adminContext,
+        );
+      },
     );
   }
 
-  const primaryClub = seededClubs[0];
   if (primaryClub?.players[0]) {
-    await profilesService.upsertProfile(
+    await tenancyContext.run(
       {
-        userId: accounts.featuredPlayer.id,
-        role: Roles.PLAYER,
-        clubId: toStringId(primaryClub.club._id, 'club'),
-        playerId: toStringId(primaryClub.players[0]._id, 'player'),
+        tenant: primaryClub.tenantId,
+        allowMissingTenant: false,
+        disableTenancy: false,
       },
-      adminContext,
+      async () => {
+        const adminContext: AccessContext = {
+          userId: accounts.systemAdmin.id,
+          role: Roles.SYSTEM_ADMIN,
+          tenantId: primaryClub.tenantId,
+        };
+        await profilesService.upsertProfile(
+          {
+            userId: accounts.featuredPlayer.id,
+            role: Roles.PLAYER,
+            clubId: toStringId(primaryClub.club._id, 'club'),
+            playerId: toStringId(primaryClub.players[0]._id, 'player'),
+          },
+          adminContext,
+        );
+      },
     );
   }
 }
@@ -765,28 +880,42 @@ function logSummary(
     })),
     users: {
       systemAdmin: {
+        id: accounts.systemAdmin.id,
         email: accounts.systemAdmin.email,
         password: DEFAULT_PASSWORDS.admin,
       },
       clubManagers: seededClubs.map((seeded) => ({
         slug: seeded.plan.slug,
+        id: accounts.clubManagers[seeded.plan.slug]?.id,
         email: accounts.clubManagers[seeded.plan.slug]?.email,
         password: seeded.plan.manager.password,
       })),
       featuredPlayer: {
+        id: accounts.featuredPlayer.id,
         email: accounts.featuredPlayer.email,
         password: DEFAULT_PASSWORDS.player,
+        clubId: seededClubs[0]
+          ? toStringId(seededClubs[0].club._id, 'club')
+          : undefined,
+        playerId: seededClubs[0]?.players[0]
+          ? toStringId(seededClubs[0].players[0]._id, 'player')
+          : undefined,
       },
     },
+    seedTenantOverride: SEED_TENANT_ID ?? null,
   });
 }
 
-bootstrap().catch((error) => {
-  const fallbackLogger = pino({
-    level: 'error',
-    base: { source: 'seed-script' },
-    timestamp: pino.stdTimeFunctions.isoTime,
+bootstrap()
+  .then(() => {
+    process.exit(0);
+  })
+  .catch((error) => {
+    const fallbackLogger = pino({
+      level: 'error',
+      base: { source: 'seed-script' },
+      timestamp: pino.stdTimeFunctions.isoTime,
+    });
+    fallbackLogger.error({ err: error }, 'Seed script failed');
+    process.exit(1);
   });
-  fallbackLogger.error({ err: error }, 'Seed script failed');
-  process.exit(1);
-});

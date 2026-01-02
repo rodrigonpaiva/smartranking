@@ -7,6 +7,7 @@ import {
   Post,
   Req,
   UnauthorizedException,
+  UseInterceptors,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
@@ -22,6 +23,7 @@ import type { UserRole } from '../auth/roles';
 import { Throttle } from '@nestjs/throttler';
 import { ParseMongoIdPipe } from '../common/pipes/parse-mongo-id.pipe';
 import type { AccessContext } from '../auth/access-context.types';
+import { NoCacheInterceptor } from '../common/interceptors/no-cache.interceptor';
 
 interface GetMeResponse {
   id: string | null;
@@ -55,6 +57,7 @@ export class UsersController {
 
   @Get('me')
   @RequireRoles(Roles.SYSTEM_ADMIN, Roles.CLUB, Roles.PLAYER)
+  @UseInterceptors(NoCacheInterceptor)
   getMe(@Req() req: Request): GetMeResponse {
     const typed = req as RequestWithProfile;
     const user = typed.user ?? null;

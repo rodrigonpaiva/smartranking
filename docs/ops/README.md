@@ -32,6 +32,7 @@
 
 ## Build & Deploy Workflow
 - The dev watcher (`npm run start:dev`) writes into `dist/`; stop it with `Ctrl+C` before building.
+- Build scripts use `npx nest` so no global Nest CLI install is required.
 - Use the new clean helper to avoid ENOTEMPTY errors: `npm run clean` followed by `npm run build` (the build script already runs clean first).
 - If you must rebuild while the watcher is running, kill the watcher or remove `dist/` manually; otherwise the Nest CLI cannot clear the folder.
 

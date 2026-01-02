@@ -198,24 +198,32 @@ export const tenancyPlugin = (
       },
       next: (err?: Error) => void,
     ) {
+      const done =
+        typeof next === 'function'
+          ? next
+          : (err?: Error) => {
+              if (err) {
+                throw err;
+              }
+            };
       if (shouldSkipTenancy()) {
-        next();
+        done();
         return;
       }
       const scope = tenancyContext.get();
       if (!scope?.tenant) {
-        next();
+        done();
         return;
       }
       const currentTenant = this.get(tenantField);
       if (currentTenant && currentTenant !== scope.tenant) {
-        next(new Error(TENANT_IMMUTABLE_ERROR));
+        done(new Error(TENANT_IMMUTABLE_ERROR));
         return;
       }
       if (!currentTenant) {
         this.set(tenantField, scope.tenant);
       }
-      next();
+      done();
     },
   );
 
