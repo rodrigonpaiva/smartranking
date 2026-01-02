@@ -3,6 +3,7 @@ import { tenancyPlugin } from '../../tenancy/tenancy.plugin';
 
 export const CategorySchema = new mongoose.Schema(
   {
+    tenant: { type: String, required: true, immutable: true, index: true },
     category: { type: String },
     description: { type: String },
     events: [
@@ -17,12 +18,15 @@ export const CategorySchema = new mongoose.Schema(
       ref: 'Club',
       required: true,
     },
-    players: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Player',
-      },
-    ],
+    players: {
+      type: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Player',
+        },
+      ],
+      default: [],
+    },
   },
   { timestamps: true, collection: 'categorie' },
 );

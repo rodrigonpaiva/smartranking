@@ -7,8 +7,11 @@ import pino from 'pino';
 import { AppModule } from '../app.module';
 import { tenancyContext } from '../tenancy/tenancy.context';
 import { Club } from '../clubs/interfaces/club.interface';
-import { Category } from '../categories/interfaces/category.interface';
-import { Player } from '../players/interfaces/players.interface';
+import type { CategoryDocument } from '../categories/interfaces/category.interface';
+import type {
+  CreatePlayerData,
+  Player,
+} from '../players/interfaces/players.interface';
 import { MatchesService } from '../matches/matches.service';
 import { UserProfilesService } from '../users/users.service';
 import { Roles } from '../auth/roles';
@@ -74,7 +77,7 @@ interface SeededClubContext {
   plan: ClubSeedPlan;
   club: Club;
   players: Player[];
-  categories: Record<string, Category>;
+  categories: Record<string, CategoryDocument>;
   tenantId: string;
 }
 
@@ -442,7 +445,9 @@ async function bootstrap(): Promise<void> {
   try {
     const logger = app.get(StructuredLoggerService);
     const clubModel = app.get<Model<Club>>(getModelToken('Club'));
-    const categoryModel = app.get<Model<Category>>(getModelToken('Category'));
+  const categoryModel = app.get<Model<CategoryDocument>>(
+    getModelToken('Category'),
+  );
     const playerModel = app.get<Model<Player>>(getModelToken('Player'));
     const matchModel = app.get<Model<Match>>(getModelToken('Match'));
     const matchesService = app.get(MatchesService);
@@ -520,11 +525,11 @@ async function ensureClub(
   };
   const existing = await clubModel.findOne({ slug: plan.slug }).exec();
   if (!existing) {
-    const payload = {
+    const payload: Club = {
       ...base,
       tenant: tenantId,
       _id: new Types.ObjectId(tenantId),
-    } as unknown as Club & { tenant: string };
+    };
     const created = new clubModel(payload);
     return (await created.save()) as Club;
   }
@@ -538,12 +543,13 @@ async function ensureClub(
 }
 
 async function ensureCategories(
-  categoryModel: Model<Category>,
+  categoryModel: Model<CategoryDocument>,
   plan: ClubSeedPlan,
   club: Club,
   tenantId: string,
-): Promise<Record<string, Category>> {
-  const categories: Record<string, Category> = {};
+): Promise<Record<string, CategoryDocument>> {
+  const categories: Record<string, CategoryDocument> = {};
+  const clubObjectId = requireObjectId(club._id, 'club');
   for (const definition of plan.categories) {
     const category = await categoryModel
       .findOne({ category: definition.code })
@@ -556,7 +562,7 @@ async function ensureCategories(
             $setOnInsert: {
               category: definition.code,
               description: definition.description,
-              clubId: club._id,
+              clubId: clubObjectId,
               players: [],
               tenant: tenantId,
             },
@@ -568,14 +574,14 @@ async function ensureCategories(
         .findOne({ category: definition.code })
         .exec();
       if (created) {
-        categories[definition.code] = created as Category;
+        categories[definition.code] = created;
       }
       continue;
     }
 
-    const categoryTenant = category.tenant as string | undefined;
+    const categoryTenant = category.tenant;
     const categoryClubId = category.clubId?.toString();
-    const expectedClubId = club._id?.toString();
+    const expectedClubId = clubObjectId.toString();
     const scopeMatches =
       categoryTenant === tenantId && categoryClubId === expectedClubId;
     if (!scopeMatches) {
@@ -590,7 +596,7 @@ async function ensureCategories(
           existingClubId: categoryClubId ?? null,
         });
       }
-      categories[definition.code] = category as Category;
+      categories[definition.code] = category;
       continue;
     }
 
@@ -605,11 +611,11 @@ async function ensureCategories(
         .findOne({ _id: category._id })
         .exec();
       if (updated) {
-        categories[definition.code] = updated as Category;
+        categories[definition.code] = updated;
         continue;
       }
     }
-    categories[definition.code] = category as Category;
+    categories[definition.code] = category;
   }
   return categories;
 }
@@ -621,16 +627,17 @@ async function ensurePlayers(
   tenantId: string,
 ): Promise<Player[]> {
   const players: Player[] = [];
+  const clubObjectId = requireObjectId(club._id, 'club');
   for (const seed of plan.players) {
     let player = await playerModel
-      .findOne({ email: seed.email, clubId: club._id })
+      .findOne({ email: seed.email, clubId: clubObjectId })
       .exec();
     if (!player) {
-      const payload = {
+      const payload: CreatePlayerData = {
         ...seed,
-        clubId: club._id,
+        clubId: clubObjectId,
         tenant: tenantId,
-      } as unknown as Player & { tenant: string };
+      };
       player = await playerModel.create(payload);
     } else {
       const updates: Partial<{ name: string; phone: string }> = {};
@@ -652,8 +659,8 @@ async function ensurePlayers(
 }
 
 async function assignPlayersToCategories(
-  categoryModel: Model<Category>,
-  categories: Record<string, Category>,
+  categoryModel: Model<CategoryDocument>,
+  categories: Record<string, CategoryDocument>,
   plan: ClubSeedPlan,
   players: Player[],
 ): Promise<void> {
@@ -675,7 +682,7 @@ async function seedMatchesForPlan(
   matchModel: Model<Match>,
   plan: ClubSeedPlan,
   club: Club,
-  categories: Record<string, Category>,
+  categories: Record<string, CategoryDocument>,
   players: Player[],
   adminUserId: string,
   tenantId: string,
@@ -761,6 +768,19 @@ function toStringId(value: unknown, label: string): string {
     }
   }
   throw new Error(`Unable to resolve ${label} identifier`);
+}
+
+function requireObjectId(value: unknown, label: string): Types.ObjectId {
+  if (!value) {
+    throw new Error(`${label} identifier is missing`);
+  }
+  if (value instanceof Types.ObjectId) {
+    return value;
+  }
+  if (typeof value === 'string' && Types.ObjectId.isValid(value)) {
+    return new Types.ObjectId(value);
+  }
+  throw new Error(`Invalid ${label} identifier`);
 }
 
 function deterministicObjectId(seed: string): string {
