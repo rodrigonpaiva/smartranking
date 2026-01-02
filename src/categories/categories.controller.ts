@@ -1,15 +1,18 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Param,
   Post,
   Put,
+  Query,
   Req,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
-import { Request } from 'express';
+import { ApiCookieAuth, ApiSecurity, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import { RequireRoles } from '../auth/roles.decorator';
 import { Roles } from '../auth/roles';
 import { CreateCategoryDto } from './dto/cretae-categorie.dto';
@@ -17,52 +20,91 @@ import { CategoriesService } from './categories.service';
 import { Category } from './interfaces/category.interface';
 import { UpdateCategoryDto } from './dto/update-categorie.dt';
 import { ValidationParamPipe } from '../common/pipes/validation-param.pipe';
+import { ParseMongoIdPipe } from '../common/pipes/parse-mongo-id.pipe';
+import type { AccessContext } from '../auth/access-context.types';
+import type { PaginatedResult } from '../common/interfaces/paginated-result.interface';
+import { ListCategoriesQueryDto } from './dtos/list-categories.query';
+import { PaginationQueryDto } from '../common/dtos/pagination-query.dto';
 
+type RequestWithContext = Request & { accessContext?: AccessContext | null };
+@ApiTags('Categories')
+@ApiCookieAuth('SessionCookie')
+@ApiSecurity('Tenant')
 @Controller('api/v1/categories')
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
+
+  private getAccessContext(req: Request): AccessContext {
+    const context = (req as RequestWithContext).accessContext;
+    if (!context) {
+      throw new ForbiddenException('Access context missing');
+    }
+    return context;
+  }
 
   @Post()
   @RequireRoles(Roles.SYSTEM_ADMIN, Roles.CLUB)
   @UsePipes(ValidationPipe)
   async createCategory(
+    @Req() req: Request,
     @Body() createCategoryDto: CreateCategoryDto,
   ): Promise<Category> {
-    return await this.categoriesService.createCategory(createCategoryDto);
+    return await this.categoriesService.createCategory(
+      createCategoryDto,
+      this.getAccessContext(req),
+    );
   }
   @Get()
   @RequireRoles(Roles.SYSTEM_ADMIN, Roles.CLUB)
-  async getCategory(): Promise<Array<Category>> {
-    return await this.categoriesService.getCategory();
+  async getCategory(
+    @Req() req: Request,
+    @Query(new ValidationPipe({ transform: true, whitelist: true }))
+    query: ListCategoriesQueryDto,
+  ): Promise<PaginatedResult<Category>> {
+    return await this.categoriesService.getCategory(
+      query,
+      this.getAccessContext(req),
+    );
   }
 
   @Get('my')
   @RequireRoles(Roles.PLAYER)
   async getMyCategories(
-    @Req() req: Request & { userProfile?: { playerId?: string } },
-  ) {
-    const playerId = req.userProfile?.playerId;
-    return await this.categoriesService.getCategoriesByPlayer(playerId);
+    @Req() req: Request,
+    @Query(new ValidationPipe({ transform: true, whitelist: true }))
+    pagination: PaginationQueryDto,
+  ): Promise<PaginatedResult<Category>> {
+    const playerId = req.accessContext?.playerId;
+    return await this.categoriesService.getCategoriesByPlayer(
+      playerId,
+      pagination,
+    );
   }
 
   @Get('/:category')
   @RequireRoles(Roles.SYSTEM_ADMIN, Roles.CLUB)
   async getCategorieById(
     @Param('category') category: string,
+    @Req() req: Request,
   ): Promise<Category> {
-    return await this.categoriesService.getCategoryById(category);
+    return await this.categoriesService.getCategoryById(
+      category,
+      this.getAccessContext(req),
+    );
   }
 
   @Put('/:category')
   @RequireRoles(Roles.SYSTEM_ADMIN, Roles.CLUB)
   @UsePipes(ValidationPipe)
   async updateCategory(
+    @Req() req: Request,
     @Body() updateCategory: UpdateCategoryDto,
     @Param('category') category: string,
   ): Promise<Category> {
     return await this.categoriesService.updateCategory(
       category,
       updateCategory,
+      this.getAccessContext(req),
     );
   }
 
@@ -70,11 +112,13 @@ export class CategoriesController {
   @RequireRoles(Roles.SYSTEM_ADMIN, Roles.CLUB)
   async assignPlayerCategory(
     @Param('category', ValidationParamPipe) category: string,
-    @Param('playerId', ValidationParamPipe) playerId: string,
+    @Param('playerId', ParseMongoIdPipe) playerId: string,
+    @Req() req: Request,
   ): Promise<void> {
-    return await this.categoriesService.assignPlayerCategory({
+    return await this.categoriesService.assignPlayerCategory(
       category,
       playerId,
-    });
+      this.getAccessContext(req),
+    );
   }
 }

@@ -20,3 +20,7 @@ export const PlayerSchema = new mongoose.Schema(
 
 PlayerSchema.plugin(tenancyPlugin);
 PlayerSchema.index({ tenant: 1, clubId: 1, email: 1 }, { unique: true });
+PlayerSchema.index({ tenant: 1, clubId: 1, name: 1 });
+PlayerSchema.index({ tenant: 1, createdAt: -1 });
+PlayerSchema.index({ tenant: 1, phone: 1 });
+PlayerSchema.index({ tenant: 1, email: 1 });

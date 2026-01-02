@@ -68,3 +68,6 @@ export const MatchSchema = new mongoose.Schema(
 
 MatchSchema.plugin(tenancyPlugin);
 MatchSchema.index({ tenant: 1, clubId: 1, categoryId: 1 });
+MatchSchema.index({ tenant: 1, categoryId: 1, playedAt: -1 });
+MatchSchema.index({ tenant: 1, clubId: 1, playedAt: -1 });
+MatchSchema.index({ tenant: 1, 'participants.playerId': 1, playedAt: -1 });

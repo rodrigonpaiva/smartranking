@@ -1,7 +1,7 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -12,6 +12,17 @@ import { Player } from '../players/interfaces/players.interface';
 import { TenancyService } from '../tenancy/tenancy.service';
 import { CreateMatchDto } from './dtos/create-match.dto';
 import { Match } from './interfaces/match.interface';
+import type { AccessContext } from '../auth/access-context.types';
+import { Roles } from '../auth/roles';
+import { AuditService } from '../audit/audit.service';
+import { AuditEvent } from '../audit/audit.events';
+import type { PaginatedResult } from '../common/interfaces/paginated-result.interface';
+import { ListMatchesQueryDto } from './dtos/list-matches.query';
+import { ListMatchesByCategoryQueryDto } from './dtos/list-matches-by-category.query';
+import { ListRankingQueryDto } from './dtos/list-ranking.query';
+import type { RankingEntry } from './interfaces/ranking-entry.interface';
+import { StructuredLoggerService } from '../common/logger/logger.service';
+import { clampPagination } from '../common/pagination/pagination.util';
 
 const ELO_INITIAL_RATING = 1500;
 const ELO_K_SINGLES = 32;
@@ -36,11 +47,15 @@ export class MatchesService {
     @InjectModel('Club') private readonly clubModel: Model<Club>,
     @InjectModel('Player') private readonly playerModel: Model<Player>,
     private readonly tenancyService: TenancyService,
+    private readonly auditService: AuditService,
+    private readonly logger: StructuredLoggerService,
   ) {}
 
-  private readonly logger = new Logger(MatchesService.name);
-
-  async createMatch(dto: CreateMatchDto): Promise<Match> {
+  async createMatch(
+    dto: CreateMatchDto,
+    context: AccessContext,
+  ): Promise<Match> {
+    this.ensureClubAccess(context, this.toId(dto.clubId));
     const club = await this.clubModel.findById(dto.clubId).exec();
     if (!club) {
       throw new NotFoundException(`Club with id ${dto.clubId} not found`);
@@ -52,6 +67,7 @@ export class MatchesService {
         `Category with id ${dto.categoryId} not found`,
       );
     }
+    this.ensureCategoryAccess(category, context);
     if (this.toId(category.clubId) !== this.toId(dto.clubId)) {
       throw new BadRequestException('Category does not belong to club');
     }
@@ -298,29 +314,31 @@ export class MatchesService {
       tenant,
       categoryId: this.toId(persisted.categoryId),
     });
+    this.auditService.audit(AuditEvent.MATCH_CREATED, context, {
+      targetIds: [matchId],
+      categoryId: this.toId(persisted.categoryId),
+      clubId: this.toId(persisted.clubId),
+    });
     return persisted;
   }
 
-  private buildDateFilter(
-    dateFrom?: string,
-    dateTo?: string,
-  ): Record<string, unknown> {
+  private buildDateFilter(from?: string, to?: string): Record<string, unknown> {
     const filter: Record<string, unknown> = {};
-    if (!dateFrom && !dateTo) {
+    if (!from && !to) {
       return filter;
     }
     const range: Record<string, Date> = {};
-    if (dateFrom) {
-      const fromDate = new Date(`${dateFrom}T00:00:00`);
+    if (from) {
+      const fromDate = new Date(`${from}T00:00:00`);
       if (Number.isNaN(fromDate.getTime())) {
-        throw new BadRequestException('Invalid dateFrom format');
+        throw new BadRequestException('Invalid from date format');
       }
       range.$gte = fromDate;
     }
-    if (dateTo) {
-      const toDate = new Date(`${dateTo}T23:59:59`);
+    if (to) {
+      const toDate = new Date(`${to}T23:59:59`);
       if (Number.isNaN(toDate.getTime())) {
-        throw new BadRequestException('Invalid dateTo format');
+        throw new BadRequestException('Invalid to date format');
       }
       range.$lte = toDate;
     }
@@ -331,18 +349,21 @@ export class MatchesService {
   }
 
   async getMatches(
-    categoryId?: string,
-    dateFrom?: string,
-    dateTo?: string,
-  ): Promise<Match[]> {
-    const filter = this.buildDateFilter(dateFrom, dateTo);
-    if (categoryId) {
-      return await this.matchModel
-        .find({ categoryId, ...filter })
-        .sort({ playedAt: -1 })
-        .exec();
+    query: ListMatchesQueryDto,
+    context: AccessContext,
+  ): Promise<PaginatedResult<Match>> {
+    const filter: Record<string, unknown> = {
+      ...this.buildDateFilter(query.from, query.to),
+    };
+    const scopedClubId = this.resolveClubScope(context, query.clubId);
+    if (scopedClubId) {
+      filter.clubId = scopedClubId;
     }
-    return await this.matchModel.find(filter).sort({ playedAt: -1 }).exec();
+    if (query.categoryId) {
+      await this.ensureCategoryExists(query.categoryId, context);
+      filter.categoryId = query.categoryId;
+    }
+    return await this.paginateMatches(filter, query.page, query.limit);
   }
 
   private normalizeDecidingSetType(value: unknown): DecidingSetType {
@@ -361,10 +382,37 @@ export class MatchesService {
     event: string,
     payload: Record<string, unknown>,
   ): void {
-    this.logger.log({
+    this.logger.debug('match.domain', {
       event,
       ...payload,
     });
+  }
+
+  private async paginateMatches(
+    filter: Record<string, unknown>,
+    page: number,
+    limit: number,
+    sort: Record<string, 1 | -1> = { playedAt: -1, createdAt: -1 },
+  ): Promise<PaginatedResult<Match>> {
+    const {
+      page: safePage,
+      limit: safeLimit,
+      skip,
+    } = clampPagination({
+      page,
+      limit,
+    });
+    const queryFilter = filter as Record<string, never>;
+    const [items, total] = await Promise.all([
+      this.matchModel
+        .find(queryFilter)
+        .sort(sort)
+        .skip(skip)
+        .limit(safeLimit)
+        .exec(),
+      this.matchModel.countDocuments(queryFilter),
+    ]);
+    return { items, page: safePage, limit: safeLimit, total };
   }
 
   private toId(value: unknown): string {
@@ -381,14 +429,22 @@ export class MatchesService {
 
   async getMatchesByCategory(
     categoryId: string,
-    dateFrom?: string,
-    dateTo?: string,
-  ): Promise<Match[]> {
-    const filter = this.buildDateFilter(dateFrom, dateTo);
-    return await this.matchModel
-      .find({ categoryId, ...filter })
-      .sort({ playedAt: -1 })
-      .exec();
+    query: ListMatchesByCategoryQueryDto,
+    context: AccessContext,
+    playerId?: string,
+  ): Promise<PaginatedResult<Match>> {
+    await this.ensureCategoryExists(categoryId, context);
+    const filter: Record<string, unknown> = {
+      categoryId,
+      ...this.buildDateFilter(query.from, query.to),
+    };
+    if (context.role === Roles.CLUB) {
+      filter.clubId = context.clubId;
+    }
+    if (playerId) {
+      filter['participants.playerId'] = playerId;
+    }
+    return await this.paginateMatches(filter, query.page, query.limit);
   }
 
   async ensurePlayerInCategory(
@@ -408,27 +464,16 @@ export class MatchesService {
     }
   }
 
-  async getRankingByCategory(categoryId: string): Promise<
-    Array<{
-      _id: string;
-      email: string;
-      phone: string;
-      clubId: string;
-      name: string;
-      rating: number;
-      position: number;
-      pictureUrl: string;
-      wins: number;
-      losses: number;
-      draws: number;
-      matches: number;
-      lastMatchAt: Date | null;
-    }>
-  > {
+  async getRankingByCategory(
+    categoryId: string,
+    query: ListRankingQueryDto,
+    context: AccessContext,
+  ): Promise<PaginatedResult<RankingEntry>> {
     const category = await this.categoryModel.findById(categoryId).exec();
     if (!category) {
       throw new NotFoundException(`Category with id ${categoryId} not found`);
     }
+    this.ensureCategoryAccess(category, context);
 
     const matches = await this.matchModel
       .find({ categoryId })
@@ -437,7 +482,12 @@ export class MatchesService {
       .exec();
 
     if (matches.length === 0) {
-      return [];
+      return {
+        items: [],
+        page: query.page,
+        limit: query.limit,
+        total: 0,
+      };
     }
 
     const ratingMap = new Map<
@@ -559,7 +609,16 @@ export class MatchesService {
       tenant: this.tenancyService.tenant ?? 'unknown',
     });
 
-    return ranking;
+    const filtered = this.applyRankingSearch(ranking, query.q);
+    const { page, limit } = clampPagination(query);
+    const start = (page - 1) * limit;
+    const items = filtered.slice(start, start + limit);
+    return {
+      items,
+      page,
+      limit,
+      total: filtered.length,
+    };
   }
 
   private getOrCreateRatingState(
@@ -589,6 +648,39 @@ export class MatchesService {
     return ratingMap.get(playerId)!;
   }
 
+  private resolveClubScope(
+    context: AccessContext,
+    requestedClubId?: string,
+  ): string | undefined {
+    if (context.role === Roles.SYSTEM_ADMIN) {
+      return requestedClubId;
+    }
+    const clubId = context.clubId;
+    if (!clubId) {
+      throw new ForbiddenException('User is not assigned to a club');
+    }
+    if (requestedClubId && requestedClubId !== clubId) {
+      throw new ForbiddenException('Club not allowed for this user');
+    }
+    return clubId;
+  }
+
+  private applyRankingSearch(
+    ranking: RankingEntry[],
+    term?: string,
+  ): RankingEntry[] {
+    const normalized = term?.trim().toLowerCase();
+    if (!normalized) {
+      return ranking;
+    }
+    return ranking.filter((entry) => {
+      const haystacks = [entry.name, entry.email];
+      return haystacks.some((value) =>
+        value.toLowerCase().includes(normalized),
+      );
+    });
+  }
+
   private coerceDate(value: unknown): Date | null {
     if (!value) {
       return null;
@@ -598,5 +690,44 @@ export class MatchesService {
       return null;
     }
     return parsed;
+  }
+
+  private ensureClubAccess(context: AccessContext, targetClubId: string): void {
+    if (context.role === Roles.SYSTEM_ADMIN) {
+      return;
+    }
+    if (!context.clubId) {
+      throw new ForbiddenException('User is not assigned to a club');
+    }
+    if (context.clubId !== targetClubId) {
+      throw new ForbiddenException('Club not allowed for this user');
+    }
+  }
+
+  private async ensureCategoryExists(
+    categoryId: string,
+    context: AccessContext,
+  ): Promise<Category> {
+    const category = await this.categoryModel.findById(categoryId).exec();
+    if (!category) {
+      throw new NotFoundException(`Category with id ${categoryId} not found`);
+    }
+    this.ensureCategoryAccess(category, context);
+    return category;
+  }
+
+  private ensureCategoryAccess(
+    category: Category,
+    context: AccessContext,
+  ): void {
+    if (context.role === Roles.SYSTEM_ADMIN) {
+      return;
+    }
+    if (!context.clubId) {
+      throw new ForbiddenException('User is not assigned to a club');
+    }
+    if (this.toId(category.clubId) !== context.clubId) {
+      throw new ForbiddenException('Club not allowed for this user');
+    }
   }
 }

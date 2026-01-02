@@ -1,15 +1,24 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { Model, Types } from 'mongoose';
+import { InjectModel } from '@nestjs/mongoose';
 import { Category } from './interfaces/category.interface';
 import { CreateCategoryDto } from './dto/cretae-categorie.dto';
-import { InjectModel } from '@nestjs/mongoose';
 import { UpdateCategoryDto } from './dto/update-categorie.dt';
 import { PlayersService } from '../players/players.service';
 import { Club } from '../clubs/interfaces/club.interface';
+import type { AccessContext } from '../auth/access-context.types';
+import { Roles } from '../auth/roles';
+import type { PaginatedResult } from '../common/interfaces/paginated-result.interface';
+import { ListCategoriesQueryDto } from './dtos/list-categories.query';
+import { PaginationQueryDto } from '../common/dtos/pagination-query.dto';
+import { AuditService } from '../audit/audit.service';
+import { AuditEvent } from '../audit/audit.events';
+import { clampPagination } from '../common/pagination/pagination.util';
 
 @Injectable()
 export class CategoriesService {
@@ -17,62 +26,121 @@ export class CategoriesService {
     @InjectModel('Category') private readonly categoryModel: Model<Category>,
     @InjectModel('Club') private readonly clubModel: Model<Club>,
     private readonly playersService: PlayersService,
+    private readonly auditService: AuditService,
   ) {}
 
   async createCategory(
     createCategoryDto: CreateCategoryDto,
+    context: AccessContext,
   ): Promise<Category> {
-    const { category, clubId } = createCategoryDto;
-    const clubExists = await this.clubModel.findById(clubId).exec();
+    const targetClubId = this.ensureClubScope(
+      context,
+      createCategoryDto.clubId,
+    );
+    const { category } = createCategoryDto;
+    const clubExists = await this.clubModel.findById(targetClubId).exec();
     if (!clubExists) {
-      throw new NotFoundException(`Club with id ${clubId} not found`);
+      throw new NotFoundException(`Club with id ${targetClubId} not found`);
     }
     const categoryExists = await this.categoryModel
-      .findOne({ category, clubId })
+      .findOne({ category, clubId: targetClubId })
       .exec();
     if (categoryExists) {
       throw new BadRequestException(`Category ${category} already exists`);
     }
 
-    const createdCategory = new this.categoryModel(createCategoryDto);
-    return await createdCategory.save();
+    const createdCategory = new this.categoryModel({
+      ...createCategoryDto,
+      clubId: targetClubId,
+    });
+    const categoryCreated = await createdCategory.save();
+    this.auditService.audit(AuditEvent.CATEGORY_CREATED, context, {
+      targetIds: categoryCreated._id ? [categoryCreated._id.toString()] : [],
+      clubId: targetClubId,
+      category: categoryCreated.category,
+    });
+    return categoryCreated;
   }
 
-  async getCategory(): Promise<Array<Category>> {
-    return await this.categoryModel.find().populate('players').exec();
+  async getCategory(
+    query: ListCategoriesQueryDto,
+    context: AccessContext,
+  ): Promise<PaginatedResult<Category>> {
+    const filter: Record<string, unknown> = {};
+    const scopedClubId =
+      context.role === Roles.SYSTEM_ADMIN
+        ? query.clubId
+        : this.ensureClubScope(context);
+    if (scopedClubId) {
+      filter.clubId = scopedClubId;
+    }
+    if (query.q) {
+      filter.category = this.buildSearchRegex(query.q);
+    }
+
+    const { page, limit, skip } = clampPagination(query);
+    const baseQuery = this.categoryModel
+      .find(filter as Record<string, never>)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('players');
+    const [items, total] = await Promise.all([
+      baseQuery.exec(),
+      this.categoryModel.countDocuments(filter as Record<string, never>),
+    ]);
+    return { items, page, limit, total };
   }
 
-  async getCategoriesByPlayer(playerId?: string): Promise<Array<Category>> {
+  async getCategoriesByPlayer(
+    playerId: string | undefined,
+    pagination: PaginationQueryDto,
+  ): Promise<PaginatedResult<Category>> {
     if (!playerId) {
       throw new NotFoundException('Player profile not linked');
     }
     if (!Types.ObjectId.isValid(playerId)) {
       throw new BadRequestException('Invalid player identifier');
     }
-    return await this.categoryModel
-      .find({ players: new Types.ObjectId(playerId) })
-      .populate('players')
-      .exec();
+    const playerObjectId = new Types.ObjectId(playerId);
+    const { page, limit, skip } = clampPagination(pagination);
+    const [items, total] = await Promise.all([
+      this.categoryModel
+        .find({ players: playerObjectId })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate('players')
+        .exec(),
+      this.categoryModel.countDocuments({ players: playerObjectId }),
+    ]);
+    return { items, page, limit, total };
   }
 
-  async getCategoryById(category: string): Promise<Category> {
-    const categoryFound = await this.categoryModel.findOne({ category }).exec();
-
-    if (!categoryFound) {
-      throw new NotFoundException(`Category ${category} not found`);
-    }
-    return categoryFound;
-  }
-
-  async updateCategory(
+  async getCategoryById(
     category: string,
-    updateCategoryDto: UpdateCategoryDto,
+    context: AccessContext,
   ): Promise<Category> {
     const categoryFound = await this.categoryModel.findOne({ category }).exec();
 
     if (!categoryFound) {
       throw new NotFoundException(`Category ${category} not found`);
     }
+    this.ensureCategoryAccess(categoryFound, context);
+    return categoryFound;
+  }
+
+  async updateCategory(
+    category: string,
+    updateCategoryDto: UpdateCategoryDto,
+    context: AccessContext,
+  ): Promise<Category> {
+    const categoryFound = await this.categoryModel.findOne({ category }).exec();
+
+    if (!categoryFound) {
+      throw new NotFoundException(`Category ${category} not found`);
+    }
+    this.ensureCategoryAccess(categoryFound, context);
 
     const updated = await this.categoryModel
       .findOneAndUpdate(
@@ -81,25 +149,30 @@ export class CategoriesService {
         { new: true },
       )
       .exec();
+    this.auditService.audit(AuditEvent.CATEGORY_UPDATED, context, {
+      targetIds: [(updated?._id ?? categoryFound._id).toString()],
+      category,
+    });
     return updated as Category;
   }
 
   async assignPlayerCategory(
-    params: { category: string; playerId: string } | string[],
+    category: string,
+    playerId: string,
+    context: AccessContext,
   ): Promise<void> {
-    const { category, playerId } = this.normalizeAssignParams(params);
-
     const categoryFound = await this.categoryModel.findOne({ category }).exec();
     if (!categoryFound) {
       throw new NotFoundException(`Category ${category} not found`);
     }
+    this.ensureCategoryAccess(categoryFound, context);
 
     const playerAlreadyInCategory = await this.categoryModel
       .find({ category, clubId: categoryFound.clubId })
       .where('players')
       .in([playerId])
       .exec();
-    const player = await this.playersService.getPlayerById(playerId);
+    const player = await this.playersService.getPlayerById(playerId, context);
 
     if (playerAlreadyInCategory.length > 0) {
       throw new BadRequestException(
@@ -117,21 +190,50 @@ export class CategoriesService {
     await this.categoryModel
       .findOneAndUpdate({ category }, { $set: categoryFound })
       .exec();
+    this.auditService.audit(AuditEvent.CATEGORY_UPDATED, context, {
+      targetIds: [categoryFound._id?.toString() ?? category],
+      assignedPlayerId: playerId,
+    });
   }
-  private normalizeAssignParams(
-    params: { category: string; playerId: string } | string[],
-  ): { category: string; playerId: string } {
-    if (Array.isArray(params)) {
-      const [category, playerId] = params;
-      if (!category || !playerId) {
-        throw new BadRequestException('category and playerId are required');
+
+  private ensureClubScope(
+    context: AccessContext,
+    requestedClubId?: string,
+  ): string {
+    if (context.role === Roles.SYSTEM_ADMIN) {
+      if (!requestedClubId) {
+        throw new BadRequestException('clubId is required for this action');
       }
-      return { category, playerId };
+      return requestedClubId;
     }
-    const { category, playerId } = params;
-    if (!category || !playerId) {
-      throw new BadRequestException('category and playerId are required');
+    const clubId = context.clubId;
+    if (!clubId) {
+      throw new ForbiddenException('User is not assigned to a club');
     }
-    return { category, playerId };
+    if (requestedClubId && requestedClubId !== clubId) {
+      throw new ForbiddenException('Club not allowed for this user');
+    }
+    return clubId;
+  }
+
+  private ensureCategoryAccess(
+    category: Category,
+    context: AccessContext,
+  ): void {
+    if (context.role === Roles.SYSTEM_ADMIN) {
+      return;
+    }
+    const clubId = context.clubId;
+    if (!clubId) {
+      throw new ForbiddenException('User is not assigned to a club');
+    }
+    if (String(category.clubId) !== clubId) {
+      throw new ForbiddenException('Club not allowed for this user');
+    }
+  }
+
+  private buildSearchRegex(q: string): RegExp {
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(escaped, 'i');
   }
 }

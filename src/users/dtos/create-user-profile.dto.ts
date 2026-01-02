@@ -1,26 +1,35 @@
-import { IsIn, IsNotEmpty, IsString, ValidateIf } from 'class-validator';
+import { Transform } from 'class-transformer';
+import {
+  IsDefined,
+  IsEnum,
+  IsMongoId,
+  IsNotEmpty,
+  ValidateIf,
+} from 'class-validator';
+import { trim } from '../../common/transformers/trim.transformer';
 import { Roles } from '../../auth/roles';
 import type { UserRole } from '../../auth/roles';
 
 export class CreateUserProfileDto {
-  @IsString()
-  @IsNotEmpty()
+  @Transform(trim)
+  @IsMongoId()
   readonly userId: string;
 
-  @IsString()
-  @IsIn([Roles.SYSTEM_ADMIN, Roles.CLUB, Roles.PLAYER])
+  @IsEnum(Roles)
   readonly role: UserRole;
 
   @ValidateIf(
     (dto: CreateUserProfileDto) =>
       dto.role === Roles.CLUB || dto.role === Roles.PLAYER,
   )
-  @IsString()
+  @IsDefined()
   @IsNotEmpty()
+  @IsMongoId()
   readonly clubId?: string;
 
   @ValidateIf((dto: CreateUserProfileDto) => dto.role === Roles.PLAYER)
-  @IsString()
+  @IsDefined()
   @IsNotEmpty()
+  @IsMongoId()
   readonly playerId?: string;
 }

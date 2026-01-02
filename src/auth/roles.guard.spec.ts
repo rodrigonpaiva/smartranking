@@ -34,28 +34,49 @@ describe('RolesGuard', () => {
     expect(guard.canActivate(context)).toBe(true);
   });
 
-  it('allows bootstrap profile creation without profile on request', () => {
+  it('allows self profile bootstrap when profile is missing', () => {
+    reflector.getAllAndOverride.mockReturnValue([Roles.SYSTEM_ADMIN]);
+    const context = createContext({
+      method: 'POST',
+      originalUrl: '/api/v1/users/profiles/self',
+    });
+    expect(guard.canActivate(context)).toBe(true);
+  });
+
+  it('blocks moderator bootstrap when profile is missing', () => {
     reflector.getAllAndOverride.mockReturnValue([Roles.SYSTEM_ADMIN]);
     const context = createContext({
       method: 'POST',
       originalUrl: '/api/v1/users/profiles',
     });
-    expect(guard.canActivate(context)).toBe(true);
+    expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
   });
 
   it('blocks missing roles when bootstrap rules are not met', () => {
     reflector.getAllAndOverride.mockReturnValue([Roles.CLUB]);
-    const context = createContext({ userProfile: null, method: 'GET' });
+    const context = createContext({
+      accessContext: null,
+      userProfile: null,
+      method: 'GET',
+    });
     expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
   });
 
   it('allows matching role and blocks non-matching roles', () => {
     reflector.getAllAndOverride.mockReturnValue([Roles.CLUB]);
-    const allowedContext = createContext({ userProfile: { role: Roles.CLUB } });
+    const allowedContext = createContext({
+      accessContext: {
+        userId: 'club-user',
+        role: Roles.CLUB,
+      },
+    });
     expect(guard.canActivate(allowedContext)).toBe(true);
 
     const blockedContext = createContext({
-      userProfile: { role: Roles.PLAYER },
+      accessContext: {
+        userId: 'player-1',
+        role: Roles.PLAYER,
+      },
     });
     expect(() => guard.canActivate(blockedContext)).toThrow(ForbiddenException);
   });

@@ -5,6 +5,7 @@ import { UsersController } from './users.controller';
 import { UserProfilesService } from './users.service';
 import { ClubSchema } from '../clubs/interfaces/club.schema';
 import { PlayerSchema } from '../players/interfaces/player.schema';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { PlayerSchema } from '../players/interfaces/player.schema';
       { name: 'Club', schema: ClubSchema },
       { name: 'Player', schema: PlayerSchema },
     ]),
+    AuditModule,
   ],
   controllers: [UsersController],
   providers: [UserProfilesService],

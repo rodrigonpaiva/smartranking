@@ -1,0 +1,84 @@
+{
+  "info": {
+    "name": "SmartRanking API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Public Clubs",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/clubs/public",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "clubs", "public"]
+        }
+      }
+    },
+    {
+      "name": "List Clubs",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Cookie", "value": "better-auth.session-token={{sessionToken}}" },
+          { "key": "x-tenant-id", "value": "{{tenantId}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/clubs?page=1&limit=20",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "clubs"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "List Players",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Cookie", "value": "better-auth.session-token={{sessionToken}}" },
+          { "key": "x-tenant-id", "value": "{{tenantId}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/players?page=1&limit=20",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "players"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Upsert Self Profile",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Cookie", "value": "better-auth.session-token={{sessionToken}}" },
+          { "key": "x-tenant-id", "value": "{{tenantId}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"role\": \"club\",\n  \"clubId\": \"{{clubId}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/users/profiles/self",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "users", "profiles", "self"]
+        }
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "tenantId", "value": "tenant_demo" },
+    { "key": "clubId", "value": "" },
+    { "key": "sessionToken", "value": "" }
+  ]
+}

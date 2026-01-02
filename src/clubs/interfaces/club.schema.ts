@@ -16,3 +16,5 @@ export const ClubSchema = new mongoose.Schema(
 
 ClubSchema.plugin(tenancyPlugin);
 ClubSchema.index({ tenant: 1, slug: 1 }, { unique: true });
+ClubSchema.index({ tenant: 1, name: 1 });
+ClubSchema.index({ tenant: 1, createdAt: -1 });

@@ -24,6 +24,11 @@ const rateLimitMax = Number(process.env.BETTER_AUTH_RATE_LIMIT_MAX ?? '100');
 const rateLimitWindow = Number(
   process.env.BETTER_AUTH_RATE_LIMIT_WINDOW ?? '60',
 );
+const isProduction = process.env.NODE_ENV === 'production';
+const sameSiteEnv =
+  process.env.BETTER_AUTH_COOKIE_SAMESITE?.toLowerCase() ?? 'lax';
+const sameSite: 'lax' | 'strict' | 'none' =
+  sameSiteEnv === 'strict' || sameSiteEnv === 'none' ? sameSiteEnv : 'lax';
 
 export const authMongoClient = client;
 
@@ -36,8 +41,16 @@ export const auth = betterAuth({
     enabled: true,
   },
   advanced: {
-    // Dev-only workaround for environments that strip Origin on auth POSTs.
-    disableOriginCheck: true,
+    useSecureCookies: isProduction,
+    disableOriginCheck:
+      process.env.BETTER_AUTH_DISABLE_ORIGIN_CHECK === 'true' || !isProduction,
+    defaultCookieAttributes: {
+      sameSite,
+      httpOnly: true,
+      secure: isProduction,
+      path: '/',
+      domain: process.env.BETTER_AUTH_COOKIE_DOMAIN || undefined,
+    },
   },
   rateLimit: {
     enabled: true,

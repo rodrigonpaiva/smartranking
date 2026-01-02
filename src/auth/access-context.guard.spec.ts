@@ -1,10 +1,15 @@
-import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ExecutionContext } from '@nestjs/common/interfaces';
 import { AccessContextGuard } from './access-context.guard';
 import { UserProfilesService } from '../users/users.service';
 import { TenancyService } from '../tenancy/tenancy.service';
 import { Roles } from './roles';
+import { RequestContextService } from '../common/logger/request-context.service';
 
 const createExecutionContext = (
   request: Record<string, unknown>,
@@ -26,7 +31,10 @@ describe('AccessContextGuard', () => {
   let tenancyService: TenancyService;
   let findByUserIdMock: jest.Mock;
   let setTenantMock: jest.Mock;
-  let disableTenancyMock: jest.Mock;
+  let requestContextService: RequestContextService;
+  let mergeContextMock: jest.Mock;
+  let registerContextMock: jest.Mock;
+  let setTenantContextMock: jest.Mock;
 
   beforeEach(() => {
     reflector = {
@@ -40,13 +48,27 @@ describe('AccessContextGuard', () => {
     } as unknown as UserProfilesService;
 
     setTenantMock = jest.fn();
-    disableTenancyMock = jest.fn();
     tenancyService = {
       setTenant: setTenantMock,
-      disableTenancyForCurrentScope: disableTenancyMock,
     } as unknown as TenancyService;
 
-    guard = new AccessContextGuard(reflector, profilesService, tenancyService);
+    mergeContextMock = jest.fn();
+    registerContextMock = jest.fn();
+    setTenantContextMock = jest.fn();
+    requestContextService = {
+      merge: mergeContextMock,
+      registerAccessContext: registerContextMock,
+      setTenant: setTenantContextMock,
+      get: jest.fn(),
+      run: jest.fn(),
+    } as unknown as RequestContextService;
+
+    guard = new AccessContextGuard(
+      reflector,
+      profilesService,
+      tenancyService,
+      requestContextService,
+    );
   });
 
   it('allows public routes without authentication', async () => {
@@ -82,25 +104,44 @@ describe('AccessContextGuard', () => {
     expect(setTenantMock).toHaveBeenCalledWith('club-1');
   });
 
-  it('disables tenancy for system admin wide GET access', async () => {
+  it('allows system admins to fall back to clubId when header missing', async () => {
     reflector.getAllAndOverride = jest
       .fn()
       .mockReturnValueOnce(false)
       .mockReturnValueOnce(false);
 
     const context = createExecutionContext({
-      method: 'GET',
+      method: 'POST',
       headers: {},
-      originalUrl: '/api/v1/users',
+      body: { clubId: 'club-5' },
       user: { id: 'admin' },
       userProfile: { role: Roles.SYSTEM_ADMIN },
-      query: {},
-      params: {},
-      body: {},
     });
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
-    expect(disableTenancyMock).toHaveBeenCalled();
+    expect(setTenantMock).toHaveBeenCalledWith('club-5');
+  });
+
+  it('rejects missing tenant header for club users', async () => {
+    reflector.getAllAndOverride = jest
+      .fn()
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(false);
+
+    findByUserIdMock.mockResolvedValue({
+      userId: 'club-user',
+      role: Roles.CLUB,
+      clubId: 'club-1',
+    } as never);
+
+    const context = createExecutionContext({
+      headers: {},
+      user: { id: 'club-user' },
+    });
+
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
   });
 
   it('blocks cross-tenant access for club roles', async () => {
@@ -129,6 +170,24 @@ describe('AccessContextGuard', () => {
     const context = createExecutionContext({ headers: {} });
     await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
       UnauthorizedException,
+    );
+  });
+
+  it('throws bad request when admin lacks tenant context', async () => {
+    reflector.getAllAndOverride = jest
+      .fn()
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(false);
+
+    const context = createExecutionContext({
+      headers: {},
+      method: 'GET',
+      user: { id: 'admin' },
+      userProfile: { role: Roles.SYSTEM_ADMIN },
+    });
+
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
+      BadRequestException,
     );
   });
 });

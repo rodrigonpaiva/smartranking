@@ -5,6 +5,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { CategorySchema } from './interfaces/category.schema';
 import { PlayersModule } from '../players/players.module';
 import { ClubSchema } from '../clubs/interfaces/club.schema';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { ClubSchema } from '../clubs/interfaces/club.schema';
       { name: 'Club', schema: ClubSchema },
     ]),
     PlayersModule,
+    AuditModule,
   ],
   providers: [CategoriesService],
   controllers: [CategoriesController],

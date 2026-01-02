@@ -1,6 +1,6 @@
 # Quickstart – Club Happy Path
 
-This guide shows the minimal steps a club administrator performs through the SmartRanking API. Use the Postman collection under `docs/postman/smartranking.postman_collection.json` or the equivalent HTTP calls below. All requests include `x-tenant-id: default` unless noted otherwise.
+This guide shows the minimal steps a club administrator performs through the SmartRanking API. Use the Postman collection under `postman/smartranking-api.postman_collection.json` or the equivalent HTTP calls below. All requests include `x-tenant-id` (use the seeded club ID) unless noted otherwise.
 
 1. **Sign up / authenticate**
    - Use Better Auth (`/api/auth/sign-up/email` then `/api/auth/sign-in/email`).

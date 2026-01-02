@@ -7,9 +7,11 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { ROLES_KEY } from './roles.decorator';
-import { UserRole } from './roles';
+import type { UserRole } from './roles';
+import type { AccessContext } from './access-context.types';
 
-type RequestWithProfile = Request & {
+type RequestWithAccessContext = Request & {
+  accessContext?: AccessContext | null;
   userProfile?: {
     role: UserRole;
   } | null;
@@ -29,10 +31,12 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest<RequestWithProfile>();
-    const role = request.userProfile?.role;
+    const request = context
+      .switchToHttp()
+      .getRequest<RequestWithAccessContext>();
+    const role = request.accessContext?.role ?? request.userProfile?.role;
     if (!role) {
-      if (this.isBootstrapRequest(request, requiredRoles)) {
+      if (this.shouldBypassRoleCheck(request)) {
         return true;
       }
       throw new ForbiddenException('User role not available');
@@ -45,20 +49,27 @@ export class RolesGuard implements CanActivate {
     return true;
   }
 
-  private isBootstrapRequest(
-    request: RequestWithProfile,
-    requiredRoles: UserRole[],
-  ): boolean {
-    if (!requiredRoles.includes('system_admin')) {
+  private shouldBypassRoleCheck(request: RequestWithAccessContext): boolean {
+    // Bootstrap bypass: allow authenticated users without a profile to
+    // access only onboarding endpoints (`GET /users/me` and
+    // `POST|PUT /users/profiles/self`). Any other route requires an
+    // explicit role, preventing privilege escalation during onboarding.
+    const hasProfile = Boolean(
+      request.accessContext?.role ?? request.userProfile?.role,
+    );
+    if (hasProfile) {
       return false;
     }
-    if (request.method !== 'POST') {
-      return false;
-    }
-    const url = request.originalUrl ?? '';
-    if (!url.includes('/api/v1/users/profiles')) {
-      return false;
-    }
-    return true;
+
+    const method = (request.method ?? '').toUpperCase();
+    const rawPath = (request.originalUrl ?? request.url ?? '').split('?')[0];
+    const path = rawPath.replace(/\/+/g, '/').replace(/\/$/, '') || '/';
+
+    const isUsersMe = method === 'GET' && path === '/api/v1/users/me';
+    const isSelfProfile =
+      (method === 'POST' || method === 'PUT') &&
+      path === '/api/v1/users/profiles/self';
+
+    return isUsersMe || isSelfProfile;
   }
 }

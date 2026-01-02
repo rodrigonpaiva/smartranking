@@ -29,3 +29,5 @@ export const CategorySchema = new mongoose.Schema(
 
 CategorySchema.plugin(tenancyPlugin);
 CategorySchema.index({ tenant: 1, clubId: 1, category: 1 }, { unique: true });
+CategorySchema.index({ tenant: 1, clubId: 1, createdAt: -1 });
+CategorySchema.index({ tenant: 1, category: 1 });

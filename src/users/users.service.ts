@@ -11,6 +11,9 @@ import { Player } from '../players/interfaces/players.interface';
 import { CreateUserProfileDto } from './dtos/create-user-profile.dto';
 import { CreateSelfProfileDto } from './dtos/create-self-profile.dto';
 import { UserProfile } from './interfaces/user-profile.interface';
+import type { AccessContext } from '../auth/access-context.types';
+import { AuditService } from '../audit/audit.service';
+import { AuditEvent } from '../audit/audit.events';
 
 @Injectable()
 export class UserProfilesService {
@@ -19,31 +22,60 @@ export class UserProfilesService {
     private readonly userProfileModel: Model<UserProfile>,
     @InjectModel('Club') private readonly clubModel: Model<Club>,
     @InjectModel('Player') private readonly playerModel: Model<Player>,
+    private readonly auditService: AuditService,
   ) {}
 
   async findByUserId(userId: string): Promise<UserProfile | null> {
     return await this.userProfileModel.findOne({ userId }).exec();
   }
 
-  async upsertProfile(dto: CreateUserProfileDto): Promise<UserProfile> {
+  async upsertProfile(
+    dto: CreateUserProfileDto,
+    context: AccessContext,
+  ): Promise<UserProfile> {
     await this.validateProfile(dto);
-    return await this.userProfileModel.findOneAndUpdate(
+    const profile = await this.userProfileModel.findOneAndUpdate(
       { userId: dto.userId },
       { $set: dto },
       { upsert: true, new: true },
     );
+    this.auditService.audit(AuditEvent.PROFILE_UPDATED, context, {
+      targetIds: profile?.userId ? [profile.userId] : [dto.userId],
+      role: dto.role,
+      clubId: dto.clubId ?? null,
+    });
+    if (dto.role === Roles.CLUB) {
+      this.auditService.audit(AuditEvent.MODERATOR_ASSIGNED, context, {
+        targetIds: [dto.userId],
+        clubId: dto.clubId ?? null,
+      });
+    }
+    return profile;
   }
 
   async upsertSelfProfile(
     userId: string,
     dto: CreateSelfProfileDto,
+    context: AccessContext,
   ): Promise<UserProfile> {
     await this.validateSelfProfile(dto);
-    return await this.userProfileModel.findOneAndUpdate(
+    const profile = await this.userProfileModel.findOneAndUpdate(
       { userId },
       { $set: { ...dto, userId } },
       { upsert: true, new: true },
     );
+    this.auditService.audit(AuditEvent.PROFILE_UPDATED, context, {
+      targetIds: [userId],
+      role: dto.role,
+      clubId: dto.clubId,
+    });
+    if (dto.role === Roles.CLUB) {
+      this.auditService.audit(AuditEvent.MODERATOR_ASSIGNED, context, {
+        targetIds: [userId],
+        clubId: dto.clubId,
+      });
+    }
+    return profile;
   }
 
   async getProfileOrFail(userId: string): Promise<UserProfile> {

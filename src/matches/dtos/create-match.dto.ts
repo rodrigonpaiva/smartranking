@@ -1,12 +1,13 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
+  ArrayMaxSize,
   IsDateString,
   IsIn,
   IsInt,
-  IsNotEmpty,
   IsOptional,
   IsString,
+  IsMongoId,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -35,17 +36,15 @@ export class MatchSetDto {
 
 export class MatchTeamDto {
   @ArrayMinSize(1)
-  @IsString({ each: true })
+  @IsMongoId({ each: true })
   readonly players: string[];
 }
 
 export class CreateMatchDto {
-  @IsString()
-  @IsNotEmpty()
+  @IsMongoId()
   readonly categoryId: string;
 
-  @IsString()
-  @IsNotEmpty()
+  @IsMongoId()
   readonly clubId: string;
 
   @IsString()
@@ -65,7 +64,8 @@ export class CreateMatchDto {
     | 'SUPER_TIEBREAK_7'
     | 'SUPER_TIEBREAK_10';
 
-  @ArrayMinSize(1)
+  @ArrayMinSize(2)
+  @ArrayMaxSize(2)
   @ValidateNested({ each: true })
   @Type(() => MatchTeamDto)
   readonly teams: MatchTeamDto[];

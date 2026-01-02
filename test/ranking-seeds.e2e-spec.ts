@@ -9,6 +9,7 @@ import { tenancyContext } from '../src/tenancy/tenancy.context';
 import { Club } from '../src/clubs/interfaces/club.interface';
 import { Player } from '../src/players/interfaces/players.interface';
 import { Category } from '../src/categories/interfaces/category.interface';
+import { Roles } from '../src/auth/roles';
 
 const TENANT = 'seed-tenant';
 
@@ -273,15 +274,20 @@ describe('Ranking integration seeds', () => {
     }
 
     const ranking = await runAsTenant(() =>
-      matchesService.getRankingByCategory(categoryAId),
+      matchesService.getRankingByCategory(
+        categoryAId,
+        { page: 1, limit: 20 },
+        { userId: 'seed-admin', role: Roles.SYSTEM_ADMIN },
+      ),
     );
 
-    expect(ranking).toHaveLength(6);
-    expect(ranking[0].name).toBe('Player 1');
-    expect(ranking[0].rating).toBeGreaterThan(ranking[1].rating);
-    expect(ranking[0].wins).toBeGreaterThan(0);
-    expect(ranking[3].rating).toBeLessThan(ranking[2].rating);
-    expect(ranking.map((item) => item.name)).toEqual([
+    expect(ranking.total).toBe(6);
+    expect(ranking.items).toHaveLength(6);
+    expect(ranking.items[0].name).toBe('Player 1');
+    expect(ranking.items[0].rating).toBeGreaterThan(ranking.items[1].rating);
+    expect(ranking.items[0].wins).toBeGreaterThan(0);
+    expect(ranking.items[3].rating).toBeLessThan(ranking.items[2].rating);
+    expect(ranking.items.map((item) => item.name)).toEqual([
       'Player 1',
       'Player 2',
       'Player 4',

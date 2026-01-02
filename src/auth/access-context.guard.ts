@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   CanActivate,
   ExecutionContext,
   ForbiddenException,
@@ -8,9 +9,15 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { TenancyService } from '../tenancy/tenancy.service';
+import {
+  TENANCY_HEADER_NAME,
+  TENANCY_HEADER_PATTERN,
+} from '../tenancy/tenancy.constants';
 import { UserProfilesService } from '../users/users.service';
 import { Roles, UserRole } from './roles';
 import { PUBLIC_KEY } from './public.decorator';
+import type { AccessContext } from './access-context.types';
+import { RequestContextService } from '../common/logger/request-context.service';
 
 type RequestWithUser = Request & {
   user?: { id?: string } | null;
@@ -30,10 +37,14 @@ export class AccessContextGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly userProfilesService: UserProfilesService,
     private readonly tenancyService: TenancyService,
+    private readonly requestContext: RequestContextService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
+    if (request.user?.id) {
+      this.requestContext.merge({ userId: request.user.id });
+    }
     const isPublic = this.reflector.getAllAndOverride<boolean>(PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -55,26 +66,65 @@ export class AccessContextGuard implements CanActivate {
       throw new UnauthorizedException();
     }
 
-    if (!request.userProfile) {
-      const profile = await this.userProfilesService.findByUserId(
-        request.user.id,
-      );
-      if (!profile) {
-        if (this.isMeRequest(request)) {
-          request.userProfile = null;
-          return true;
-        }
-        const canBootstrap = await this.canBootstrapProfile(request);
-        if (canBootstrap) {
-          return true;
-        }
-        throw new ForbiddenException('User profile not configured');
-      }
-      request.userProfile = profile;
+    const shouldApplyTenant = await this.ensureProfileOrAllow(request);
+    if (!shouldApplyTenant) {
+      return true;
     }
 
     this.applyTenantRules(request);
     return true;
+  }
+
+  private async ensureProfileOrAllow(
+    request: RequestWithUser,
+  ): Promise<boolean> {
+    if (request.userProfile) {
+      this.attachAccessContext(request, request.userProfile);
+      return true;
+    }
+
+    const profile = await this.userProfilesService.findByUserId(
+      request.user!.id as string,
+    );
+
+    if (!profile) {
+      if (this.isMeRequest(request)) {
+        request.userProfile = null;
+        request.accessContext = null;
+        return false;
+      }
+      const canBootstrap = await this.canBootstrapProfile(request);
+      if (canBootstrap) {
+        request.userProfile = null;
+        request.accessContext = null;
+        return false;
+      }
+      throw new ForbiddenException('User profile not configured');
+    }
+
+    request.userProfile = profile;
+    this.attachAccessContext(request, profile);
+    return true;
+  }
+
+  private attachAccessContext(
+    request: RequestWithUser,
+    profile: NonNullable<RequestWithUser['userProfile']>,
+  ): void {
+    const userId = request.user?.id;
+    if (!userId) {
+      request.accessContext = null;
+      return;
+    }
+    const context: AccessContext = {
+      userId,
+      role: profile.role,
+      tenantId: request.tenantId ?? null,
+      clubId: profile.clubId ? String(profile.clubId) : undefined,
+      playerId: profile.playerId ? String(profile.playerId) : undefined,
+    };
+    request.accessContext = context;
+    this.requestContext.registerAccessContext(context);
   }
 
   private applyTenantRules(request: RequestWithUser): void {
@@ -82,25 +132,8 @@ export class AccessContextGuard implements CanActivate {
     if (!profile) return;
 
     if (profile.role === Roles.SYSTEM_ADMIN) {
-      const explicitTenant = this.extractTenant(request);
-      if (explicitTenant) {
-        this.tenancyService.setTenant(explicitTenant);
-        return;
-      }
-
-      if (
-        request.method === 'GET' &&
-        !explicitTenant &&
-        !this.extractClubId(request)
-      ) {
-        this.tenancyService.disableTenancyForCurrentScope();
-        return;
-      }
-
-      const clubId = this.extractClubId(request);
-      if (clubId) {
-        this.tenancyService.setTenant(clubId);
-      }
+      const tenant = this.resolveTenantForAdmin(request);
+      this.activateTenant(request, tenant);
       return;
     }
 
@@ -108,29 +141,76 @@ export class AccessContextGuard implements CanActivate {
       throw new ForbiddenException('User is not assigned to a club');
     }
 
-    const headerTenant = this.extractTenant(request);
-    if (headerTenant && headerTenant !== profile.clubId) {
+    const tenantFromHeader = this.requireTenantHeader(request);
+    const normalizedClubId = String(profile.clubId);
+    if (tenantFromHeader !== normalizedClubId) {
       throw new ForbiddenException('Tenant not allowed for this user');
     }
 
     const clubId = this.extractClubId(request);
-    if (clubId && clubId !== profile.clubId) {
+    if (clubId && clubId !== normalizedClubId) {
       throw new ForbiddenException('Club not allowed for this user');
     }
 
-    this.tenancyService.setTenant(profile.clubId);
+    this.activateTenant(request, normalizedClubId);
   }
 
-  private extractTenant(request: RequestWithUser): string | undefined {
-    const headerTenant = request.headers?.['x-tenant-id'];
-    if (typeof headerTenant === 'string' && headerTenant.length > 0) {
-      return headerTenant;
+  private resolveTenantForAdmin(request: RequestWithUser): string {
+    const headerTenant = this.extractTenantFromHeaders(request);
+    const normalizedHeader = this.normalizeTenant(headerTenant);
+    if (normalizedHeader) {
+      return normalizedHeader;
     }
-    const queryTenant = this.getStringField(
-      this.asRecord(request.query),
-      'tenant',
-    );
-    return queryTenant || undefined;
+    const fallback = this.extractClubId(request);
+    if (fallback) {
+      return fallback;
+    }
+    throw new BadRequestException('Tenant header is required');
+  }
+
+  private requireTenantHeader(request: RequestWithUser): string {
+    const tenant = this.normalizeTenant(this.extractTenantFromHeaders(request));
+    if (!tenant) {
+      throw new BadRequestException('Tenant header is required');
+    }
+    return tenant;
+  }
+
+  private extractTenantFromHeaders(
+    request: RequestWithUser,
+  ): string | undefined {
+    const headerValue = request.headers?.[TENANCY_HEADER_NAME];
+    if (Array.isArray(headerValue)) {
+      return headerValue[0];
+    }
+    if (typeof headerValue === 'string') {
+      return headerValue;
+    }
+    return undefined;
+  }
+
+  private normalizeTenant(rawTenant?: string): string | undefined {
+    if (!rawTenant) {
+      return undefined;
+    }
+    const trimmed = rawTenant.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    if (!TENANCY_HEADER_PATTERN.test(trimmed)) {
+      throw new BadRequestException('Tenant header is invalid');
+    }
+    return trimmed;
+  }
+
+  private activateTenant(request: RequestWithUser, tenant: string): void {
+    this.tenancyService.setTenant(tenant);
+    request.tenantId = tenant;
+    this.requestContext.setTenant(tenant);
+    if (request.accessContext) {
+      request.accessContext.tenantId = tenant;
+      this.requestContext.registerAccessContext(request.accessContext);
+    }
   }
 
   private extractClubId(request: RequestWithUser): string | undefined {
@@ -158,6 +238,10 @@ export class AccessContextGuard implements CanActivate {
     if (request.method !== 'POST') return false;
     const url = request.originalUrl ?? '';
     if (!url.includes('/api/v1/users/profiles')) return false;
+    const isSelfProfileRequest = url.includes('/api/v1/users/profiles/self');
+    if (isSelfProfileRequest) {
+      return true;
+    }
     const hasAnyProfile = await this.userProfilesService.hasAnyProfile();
     if (hasAnyProfile) return false;
     const body = this.asRecord(request.body);

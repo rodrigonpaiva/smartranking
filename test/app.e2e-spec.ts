@@ -4,13 +4,15 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { MongoClient } from 'mongodb';
 import request from 'supertest';
 
-import { AllExceptionsFilter } from '../src/common/filters/http-exception.filter';
 import {
   ensureArray,
   ensureErrorPayload,
   ensureRecord,
   ensureString,
 } from './utils/assertions';
+import { attachTestUserContext } from './utils/test-app';
+import { AuditService } from '../src/audit/audit.service';
+import { AuditEvent } from '../src/audit/audit.events';
 
 type AppModuleImport = typeof import('../src/app.module');
 type AuthModuleImport = typeof import('../src/auth/auth');
@@ -40,6 +42,13 @@ describe('SmartRanking API (e2e)', () => {
   let createdPlayerId: string;
   let authMongoClient: MongoClient | null = null;
   let clubId: string;
+  let tenantHeader = 'bootstrap-admin';
+
+  const adminSession = (tenant: string) => ({
+    'x-test-user': 'admin-user',
+    'x-test-role': 'system_admin',
+    'x-tenant-id': tenant,
+  });
 
   beforeAll(async () => {
     mongo = await MongoMemoryServer.create({
@@ -62,13 +71,13 @@ describe('SmartRanking API (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
+    attachTestUserContext(app);
     await app.init();
     httpServer = app.getHttpServer() as HttpServer;
 
     const clubResponse = await request(httpServer)
       .post('/api/v1/clubs')
-      .set('x-tenant-id', 'test-tenant')
+      .set(adminSession(tenantHeader))
       .send({
         name: 'Pedal Club',
         slug: 'pedal-club',
@@ -78,6 +87,7 @@ describe('SmartRanking API (e2e)', () => {
       .expect(201);
     const clubBody = ensureRecord(clubResponse.body, 'create club response');
     clubId = ensureString(clubBody._id, 'club id');
+    tenantHeader = clubId;
   });
 
   afterAll(async () => {
@@ -105,7 +115,7 @@ describe('SmartRanking API (e2e)', () => {
     it('creates a new player', async () => {
       const response = await request(httpServer)
         .post('/api/v1/players')
-        .set('x-tenant-id', 'test-tenant')
+        .set(adminSession(tenantHeader))
         .send(getPlayerPayload())
         .expect(201);
 
@@ -122,29 +132,42 @@ describe('SmartRanking API (e2e)', () => {
     it('rejects duplicated player emails', async () => {
       const response = await request(httpServer)
         .post('/api/v1/players')
-        .set('x-tenant-id', 'test-tenant')
+        .set(adminSession(tenantHeader))
         .send(getPlayerPayload())
         .expect(400);
 
       const error = ensureErrorPayload(response.body);
-      const message = ensureString(error.message, 'error message');
+      const message = Array.isArray(error.message)
+        ? error.message.join(', ')
+        : error.message;
       expect(message).toContain('already exists');
     });
 
     it('returns all players', async () => {
       const response = await request(httpServer)
         .get('/api/v1/players')
-        .set('x-tenant-id', 'test-tenant')
+        .set(adminSession(tenantHeader))
         .expect(200);
 
       const players = ensureArray(response.body, 'players list');
       expect(players).toHaveLength(1);
     });
 
+    it('rejects pagination limits above the configured maximum', async () => {
+      const response = await request(httpServer)
+        .get('/api/v1/players')
+        .set(adminSession(tenantHeader))
+        .query({ limit: 500 })
+        .expect(400);
+
+      const error = ensureErrorPayload(response.body);
+      expect(error).toBeDefined();
+    });
+
     it('fetches a player by id', async () => {
       const response = await request(httpServer)
         .get(`/api/v1/players/${createdPlayerId}`)
-        .set('x-tenant-id', 'test-tenant')
+        .set(adminSession(tenantHeader))
         .expect(200);
 
       const body = ensureRecord(response.body, 'player details response');
@@ -162,13 +185,13 @@ describe('SmartRanking API (e2e)', () => {
 
       await request(httpServer)
         .put(`/api/v1/players/${createdPlayerId}`)
-        .set('x-tenant-id', 'test-tenant')
+        .set(adminSession(tenantHeader))
         .send(updatePayload)
         .expect(200);
 
       const response = await request(httpServer)
         .get(`/api/v1/players/${createdPlayerId}`)
-        .set('x-tenant-id', 'test-tenant')
+        .set(adminSession(tenantHeader))
         .expect(200);
 
       const body = ensureRecord(response.body, 'updated player response');
@@ -181,7 +204,7 @@ describe('SmartRanking API (e2e)', () => {
     it('finds a player by phone number', async () => {
       const response = await request(httpServer)
         .get('/api/v1/players/by-phone')
-        .set('x-tenant-id', 'test-tenant')
+        .set(adminSession(tenantHeader))
         .query({ phone: '11888888888' })
         .expect(200);
 
@@ -192,19 +215,61 @@ describe('SmartRanking API (e2e)', () => {
     it('deletes a player', async () => {
       await request(httpServer)
         .delete(`/api/v1/players/${createdPlayerId}`)
-        .set('x-tenant-id', 'test-tenant')
+        .set(adminSession(tenantHeader))
         .expect(200);
     });
 
     it('returns 404 when fetching a deleted player', async () => {
       const response = await request(httpServer)
         .get(`/api/v1/players/${createdPlayerId}`)
-        .set('x-tenant-id', 'test-tenant')
+        .set(adminSession(tenantHeader))
         .expect(404);
 
       const error = ensureErrorPayload(response.body);
-      const message = ensureString(error.message, 'error message');
+      const message = Array.isArray(error.message)
+        ? error.message.join(', ')
+        : error.message;
       expect(message).toContain('No players found');
+    });
+
+    it('emits audit events when creating a player', async () => {
+      const auditService = app.get(AuditService);
+      const auditSpy: jest.SpyInstance<
+        void,
+        Parameters<AuditService['audit']>
+      > = jest.spyOn(auditService, 'audit');
+      const createResponse = await request(httpServer)
+        .post('/api/v1/players')
+        .set(adminSession(tenantHeader))
+        .send({
+          email: 'player.audit@example.com',
+          name: 'Audit Player',
+          phone: '11666666666',
+          clubId,
+        })
+        .expect(201);
+
+      // Jest's mock typings surface `any[][]`; narrow explicitly for assertions.
+
+      const auditCalls: Parameters<AuditService['audit']>[] =
+        auditSpy.mock.calls;
+      const matchingCalls = auditCalls.filter(
+        ([event]) => event === AuditEvent.PLAYER_CREATED,
+      );
+      expect(matchingCalls.length).toBeGreaterThanOrEqual(1);
+      const auditMetadata = matchingCalls[0][2];
+      expect(Array.isArray(auditMetadata?.targetIds)).toBe(true);
+      expect((auditMetadata?.targetIds ?? []).length).toBeGreaterThan(0);
+      auditSpy.mockRestore();
+
+      const newPlayerId = ensureString(
+        ensureRecord(createResponse.body, 'audit player')._id,
+        'audit player id',
+      );
+      await request(httpServer)
+        .delete(`/api/v1/players/${newPlayerId}`)
+        .set(adminSession(tenantHeader))
+        .expect(200);
     });
   });
 
@@ -220,7 +285,7 @@ describe('SmartRanking API (e2e)', () => {
     beforeAll(async () => {
       const response = await request(httpServer)
         .post('/api/v1/players')
-        .set('x-tenant-id', 'test-tenant')
+        .set(adminSession(tenantHeader))
         .send({
           email: 'player.two@example.com',
           name: 'Player Two',
@@ -236,7 +301,7 @@ describe('SmartRanking API (e2e)', () => {
     it('validates payload when creating a category', async () => {
       const response = await request(httpServer)
         .post('/api/v1/categories')
-        .set('x-tenant-id', 'test-tenant')
+        .set(adminSession(tenantHeader))
         .send({ category: 'invalid', description: '', events: [], clubId })
         .expect(400);
 
@@ -247,7 +312,7 @@ describe('SmartRanking API (e2e)', () => {
     it('creates a category', async () => {
       const response = await request(httpServer)
         .post('/api/v1/categories')
-        .set('x-tenant-id', 'test-tenant')
+        .set(adminSession(tenantHeader))
         .send(getCategoryPayload())
         .expect(201);
 
@@ -264,7 +329,7 @@ describe('SmartRanking API (e2e)', () => {
     it('lists all categories', async () => {
       const response = await request(httpServer)
         .get('/api/v1/categories')
-        .set('x-tenant-id', 'test-tenant')
+        .set(adminSession(tenantHeader))
         .expect(200);
 
       const categories = ensureArray(response.body, 'categories');
@@ -274,7 +339,7 @@ describe('SmartRanking API (e2e)', () => {
     it('fetches a category by its code', async () => {
       const response = await request(httpServer)
         .get(`/api/v1/categories/${getCategoryPayload().category}`)
-        .set('x-tenant-id', 'test-tenant')
+        .set(adminSession(tenantHeader))
         .expect(200);
 
       const body = ensureRecord(response.body, 'category details response');
@@ -288,7 +353,7 @@ describe('SmartRanking API (e2e)', () => {
         .post(
           `/api/v1/categories/${getCategoryPayload().category}/players/${categoryPlayerId}`,
         )
-        .set('x-tenant-id', 'test-tenant')
+        .set(adminSession(tenantHeader))
         .expect(201);
     });
 
@@ -297,18 +362,20 @@ describe('SmartRanking API (e2e)', () => {
         .post(
           `/api/v1/categories/${getCategoryPayload().category}/players/${categoryPlayerId}`,
         )
-        .set('x-tenant-id', 'test-tenant')
+        .set(adminSession(tenantHeader))
         .expect(400);
 
       const error = ensureErrorPayload(response.body);
-      const message = ensureString(error.message, 'error message');
+      const message = Array.isArray(error.message)
+        ? error.message.join(', ')
+        : error.message;
       expect(message).toContain('already assigned');
     });
 
     it('returns the category with assigned players populated', async () => {
       const response = await request(httpServer)
         .get('/api/v1/categories')
-        .set('x-tenant-id', 'test-tenant')
+        .set(adminSession(tenantHeader))
         .expect(200);
 
       const categories = ensureArray(response.body, 'categories list').map(
@@ -326,6 +393,34 @@ describe('SmartRanking API (e2e)', () => {
       expect(players).toHaveLength(1);
       const firstPlayer = ensureRecord(players[0], 'category player');
       expect(ensureString(firstPlayer._id, 'player id')).toBe(categoryPlayerId);
+    });
+  });
+
+  describe('Operability & diagnostics', () => {
+    it('confirms service health via /health', async () => {
+      const response = await request(httpServer).get('/health').expect(200);
+
+      const body = ensureRecord(response.body, 'health payload');
+      expect(body.status).toBe('ok');
+    });
+
+    it('confirms readiness via /ready', async () => {
+      const response = await request(httpServer).get('/ready').expect(200);
+
+      const body = ensureRecord(response.body, 'ready payload');
+      expect(body.status).toBe('ok');
+    });
+
+    it('returns a requestId on validation errors', async () => {
+      const response = await request(httpServer)
+        .post('/api/v1/players')
+        .set(adminSession(tenantHeader))
+        .send({})
+        .expect(400);
+
+      const body = ensureRecord(response.body, 'error envelope');
+      expect(body.requestId).toBeDefined();
+      expect(response.headers['x-request-id']).toBeDefined();
     });
   });
 });
