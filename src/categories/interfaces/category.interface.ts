@@ -5,6 +5,7 @@ export interface Category extends Document {
   tenant: string;
   readonly category: string;
   description?: string;
+  isDoubles?: boolean;
   events?: Array<Event>;
   players: Array<Player | Types.ObjectId | string>;
   clubId: string;

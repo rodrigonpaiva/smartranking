@@ -6,6 +6,7 @@ export const CategorySchema = new mongoose.Schema(
     tenant: { type: String, required: true, immutable: true, index: true },
     category: { type: String },
     description: { type: String },
+    isDoubles: { type: Boolean, default: false },
     events: [
       {
         name: { type: String },

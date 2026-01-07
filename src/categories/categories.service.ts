@@ -37,6 +37,7 @@ export class CategoriesService {
       context,
       createCategoryDto.clubId,
     );
+    const isDoubles = createCategoryDto.isDoubles ?? false;
     const { category } = createCategoryDto;
     const clubExists = await this.clubModel.findById(targetClubId).exec();
     if (!clubExists) {
@@ -52,6 +53,7 @@ export class CategoriesService {
     const createdCategory = new this.categoryModel({
       ...createCategoryDto,
       clubId: targetClubId,
+      isDoubles,
     });
     const categoryCreated = await createdCategory.save();
     this.auditService.audit(AuditEvent.CATEGORY_CREATED, context, {
@@ -89,7 +91,12 @@ export class CategoriesService {
       baseQuery.exec(),
       this.categoryModel.countDocuments(filter as Record<string, never>),
     ]);
-    return { items, page, limit, total };
+    return {
+      items: items.map((item) => this.ensureCategoryDefaults(item)),
+      page,
+      limit,
+      total,
+    };
   }
 
   async getCategoriesByPlayer(
@@ -114,7 +121,12 @@ export class CategoriesService {
         .exec(),
       this.categoryModel.countDocuments({ players: playerObjectId }),
     ]);
-    return { items, page, limit, total };
+    return {
+      items: items.map((item) => this.ensureCategoryDefaults(item)),
+      page,
+      limit,
+      total,
+    };
   }
 
   async getCategoryById(
@@ -127,7 +139,7 @@ export class CategoriesService {
       throw new NotFoundException(`Category ${category} not found`);
     }
     this.ensureCategoryAccess(categoryFound, context);
-    return categoryFound;
+    return this.ensureCategoryDefaults(categoryFound);
   }
 
   async updateCategory(
@@ -149,11 +161,14 @@ export class CategoriesService {
         { new: true },
       )
       .exec();
+    const normalized = updated
+      ? this.ensureCategoryDefaults(updated)
+      : this.ensureCategoryDefaults(categoryFound);
     this.auditService.audit(AuditEvent.CATEGORY_UPDATED, context, {
       targetIds: [(updated?._id ?? categoryFound._id).toString()],
       category,
     });
-    return updated as Category;
+    return normalized;
   }
 
   async assignPlayerCategory(
@@ -235,5 +250,12 @@ export class CategoriesService {
   private buildSearchRegex(q: string): RegExp {
     const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return new RegExp(escaped, 'i');
+  }
+
+  private ensureCategoryDefaults(category: Category): Category {
+    if (category.isDoubles === undefined) {
+      category.isDoubles = false;
+    }
+    return category;
   }
 }

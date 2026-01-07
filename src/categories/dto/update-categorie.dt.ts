@@ -1,7 +1,9 @@
+import { ApiProperty } from '@nestjs/swagger';
 import {
   ArrayMinSize,
   IsArray,
-  IsOptional,
+  IsBoolean,
+  IsNotEmpty,
   IsString,
   ValidateNested,
 } from 'class-validator';
@@ -12,6 +14,11 @@ export class UpdateCategoryDto {
   @IsString()
   @IsOptional()
   description: string;
+
+  @ApiProperty({ type: Boolean, default: false })
+  @IsNotEmpty()
+  @IsBoolean()
+  isDoubles?: boolean;
 
   @IsArray()
   @ArrayMinSize(1)

@@ -1551,11 +1551,24 @@
       },
       "CreateCategoryDto": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "isDoubles": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "isDoubles"
+        ]
       },
       "UpdateCategoryDto": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "isDoubles": {
+            "type": "boolean",
+            "default": false
+          }
+        }
       },
       "CreateUserProfileDto": {
         "type": "object",

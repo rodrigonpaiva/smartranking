@@ -1,6 +1,8 @@
+import { ApiProperty } from '@nestjs/swagger';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsNotEmpty,
   IsNumber,
@@ -31,6 +33,11 @@ export class CreateCategoryDto {
   @IsString()
   @IsNotEmpty()
   readonly description: string;
+
+  @ApiProperty({ type: Boolean, default: false })
+  @IsNotEmpty()
+  @IsBoolean()
+  readonly isDoubles?: boolean;
 
   @IsArray()
   @ArrayMinSize(1)
