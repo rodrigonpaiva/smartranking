@@ -538,7 +538,10 @@ export class MatchesService {
     };
 
     const buildTeamKey = (members: string[]) =>
-      members.map((member) => this.toId(member)).sort().join(':');
+      members
+        .map((member) => this.toId(member))
+        .sort()
+        .join(':');
 
     const isDoubles = Boolean(category.isDoubles);
 

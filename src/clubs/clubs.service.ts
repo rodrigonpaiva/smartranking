@@ -50,6 +50,29 @@ export class ClubsService {
     return created;
   }
 
+  async registerClub(
+    createClubDto: CreateClubDto,
+  ): Promise<Pick<Club, '_id' | 'name' | 'slug'>> {
+    const existingClub = await this.clubModel
+      .findOne({ slug: createClubDto.slug })
+      .exec();
+    if (existingClub) {
+      throw new BadRequestException(
+        `Club with slug ${createClubDto.slug} already exists`,
+      );
+    }
+    const clubCreated = new this.clubModel(createClubDto);
+    (clubCreated as unknown as { tenant?: string }).tenant = String(
+      clubCreated._id,
+    );
+    const created = await clubCreated.save();
+    return {
+      _id: created._id,
+      name: created.name,
+      slug: created.slug,
+    };
+  }
+
   async getAllClubs(
     query: ListClubsQueryDto,
     context: AccessContext,

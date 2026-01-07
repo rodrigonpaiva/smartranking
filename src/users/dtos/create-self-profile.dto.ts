@@ -1,9 +1,5 @@
 import { Transform } from 'class-transformer';
-import {
-  IsIn,
-  IsMongoId,
-  ValidateIf,
-} from 'class-validator';
+import { IsIn, IsMongoId, ValidateIf } from 'class-validator';
 import { trim } from '../../common/transformers/trim.transformer';
 import { Roles } from '../../auth/roles';
 import type { UserRole } from '../../auth/roles';

@@ -81,6 +81,15 @@ export class ClubsController {
     return await this.clubsService.getPublicClubs(query);
   }
 
+  @Post('register')
+  @Public()
+  @UsePipes(ValidationPipe)
+  async registerClub(
+    @Body() createClubDto: CreateClubDto,
+  ): Promise<Pick<Club, '_id' | 'name' | 'slug'>> {
+    return await this.clubsService.registerClub(createClubDto);
+  }
+
   @Get(':_id')
   @ApiCookieAuth('SessionCookie')
   @ApiSecurity('Tenant')

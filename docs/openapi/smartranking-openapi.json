@@ -450,6 +450,30 @@
         ]
       }
     },
+    "/api/v1/clubs/register": {
+      "post": {
+        "operationId": "Clubs_registerClub",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateClubDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Clubs"
+        ]
+      }
+    },
     "/api/v1/clubs/{_id}": {
       "get": {
         "operationId": "Clubs_getClubById",
