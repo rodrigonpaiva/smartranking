@@ -31,8 +31,10 @@ describe('Ranking integration seeds', () => {
   let clubModel: Model<Club>;
   let playerModel: Model<Player>;
   let categoryModel: Model<Category>;
+  let matchModel: Model<Match>;
   let clubId: string;
   let categoryAId: string;
+  const otherClubPlayerName = 'Other Club Player';
   let memoryUnavailable = false;
 
   beforeAll(async () => {
@@ -59,6 +61,7 @@ describe('Ranking integration seeds', () => {
     clubModel = app.get(getModelToken('Club'));
     playerModel = app.get(getModelToken('Player'));
     categoryModel = app.get(getModelToken('Category'));
+    matchModel = app.get(getModelToken('Match'));
 
     await seedData();
   });
@@ -143,6 +146,7 @@ describe('Ranking integration seeds', () => {
   const seedData = async () => {
     await runAsTenant(async () => {
       const club = await clubModel.create({
+        tenant: TENANT,
         name: 'Integration Padel House',
         slug: 'integration-padel-house',
         city: 'Lisbon',
@@ -151,12 +155,14 @@ describe('Ranking integration seeds', () => {
       clubId = club._id.toString();
 
       const categoryA = await categoryModel.create({
+        tenant: TENANT,
         category: 'A',
         description: 'Advanced',
         clubId,
         players: [],
       });
       const categoryB = await categoryModel.create({
+        tenant: TENANT,
         category: 'B',
         description: 'Intermediate',
         clubId,
@@ -166,6 +172,7 @@ describe('Ranking integration seeds', () => {
 
       const playerDocs = await playerModel.create(
         Array.from({ length: 8 }).map((_, index) => ({
+          tenant: TENANT,
           name: `Player ${index + 1}`,
           email: `player${index + 1}@example.com`,
           phone: `1190000000${index + 1}`,
@@ -262,6 +269,50 @@ describe('Ranking integration seeds', () => {
         '2025-01-10T10:00:00Z',
         0,
       );
+
+      const otherClub = await clubModel.create({
+        tenant: TENANT,
+        name: 'Integration Second Club',
+        slug: 'integration-second-club',
+        city: 'Porto',
+        state: 'PT',
+      });
+      const otherPlayer = await playerModel.create({
+        tenant: TENANT,
+        name: otherClubPlayerName,
+        email: 'other.club.player@example.com',
+        phone: '21900000001',
+        clubId: otherClub._id,
+        ranking: 1500,
+      });
+      await matchModel.create({
+        tenant: TENANT,
+        categoryId: categoryAId,
+        clubId: otherClub._id,
+        format: 'SINGLES',
+        bestOf: 3,
+        decidingSetType: 'STANDARD',
+        teams: [{ players: [otherPlayer._id] }, { players: [ids[0]] }],
+        sets: [
+          {
+            games: [
+              { teamIndex: 0, score: 6 },
+              { teamIndex: 1, score: 4 },
+            ],
+          },
+          {
+            games: [
+              { teamIndex: 0, score: 6 },
+              { teamIndex: 1, score: 3 },
+            ],
+          },
+        ],
+        participants: [
+          { playerId: otherPlayer._id, result: 'WIN' },
+          { playerId: ids[0], result: 'LOSS' },
+        ],
+        playedAt: new Date('2025-01-11T10:00:00Z'),
+      });
     });
   };
 
@@ -284,16 +335,18 @@ describe('Ranking integration seeds', () => {
     expect(ranking.total).toBe(6);
     expect(ranking.items).toHaveLength(6);
     expect(ranking.items[0].name).toBe('Player 1');
-    expect(ranking.items[0].rating).toBeGreaterThan(ranking.items[1].rating);
+    expect(ranking.items[0].points).toBe(40);
+    expect(ranking.items[0].rating).toBe(40);
     expect(ranking.items[0].wins).toBeGreaterThan(0);
-    expect(ranking.items[3].rating).toBeLessThan(ranking.items[2].rating);
-    expect(ranking.items.map((item) => item.name)).toEqual([
-      'Player 1',
-      'Player 2',
-      'Player 4',
-      'Player 5',
-      'Player 6',
-      'Player 3',
-    ]);
+    expect(ranking.items[ranking.items.length - 1].name).toBe('Player 6');
+    expect(ranking.items[ranking.items.length - 1].points).toBe(0);
+    for (let index = 1; index < ranking.items.length; index += 1) {
+      expect(ranking.items[index - 1].points).toBeGreaterThanOrEqual(
+        ranking.items[index].points,
+      );
+    }
+    expect(ranking.items.map((item) => item.name)).not.toContain(
+      otherClubPlayerName,
+    );
   });
 });

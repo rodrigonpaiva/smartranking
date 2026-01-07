@@ -62,8 +62,8 @@ describe('SmartRanking API (e2e)', () => {
     process.env.BETTER_AUTH_SECRET = 'test-secret-please-change-32-chars';
     process.env.BETTER_AUTH_URL = 'http://localhost:3000';
 
-    const appModule = (await import('../src/app.module')) as AppModuleImport;
-    const authModule = (await import('../src/auth/auth')) as AuthModuleImport;
+    const appModule = loadAppModule();
+    const authModule = loadAuthModule();
     authMongoClient = authModule.authMongoClient;
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -424,3 +424,22 @@ describe('SmartRanking API (e2e)', () => {
     });
   });
 });
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === 'object');
+
+const loadAppModule = (): AppModuleImport => {
+  const moduleValue = require('../src/app.module') as unknown;
+  if (!isObject(moduleValue) || !('AppModule' in moduleValue)) {
+    throw new Error('Failed to load AppModule');
+  }
+  return moduleValue as AppModuleImport;
+};
+
+const loadAuthModule = (): AuthModuleImport => {
+  const moduleValue = require('../src/auth/auth') as unknown;
+  if (!isObject(moduleValue) || !('authMongoClient' in moduleValue)) {
+    throw new Error('Failed to load auth module');
+  }
+  return moduleValue as AuthModuleImport;
+};

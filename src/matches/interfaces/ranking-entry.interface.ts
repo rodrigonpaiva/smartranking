@@ -5,6 +5,7 @@ export interface RankingEntry {
   clubId: string;
   name: string;
   rating: number;
+  points: number;
   position: number;
   pictureUrl: string;
   wins: number;

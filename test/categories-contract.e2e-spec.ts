@@ -99,6 +99,7 @@ describe('Categories contract e2e', () => {
       async () => {
         await clubModel.create({
           _id: clubObjectId,
+          tenant: tenantId,
           name: 'Categories Contract Club',
           slug: 'categories-contract-club',
           city: 'Lisbon',
@@ -106,6 +107,7 @@ describe('Categories contract e2e', () => {
         });
 
         const player = await playerModel.create({
+          tenant: tenantId,
           name: 'Contract Player',
           email: 'contract.player@example.com',
           phone: '11999999999',
@@ -114,6 +116,7 @@ describe('Categories contract e2e', () => {
         playerId = player._id.toString();
 
         await categoryModel.create({
+          tenant: tenantId,
           category: 'PADEL_MIXED',
           description: 'Padel Mixed',
           clubId: clubObjectId,

@@ -41,7 +41,7 @@ describe('Tenancy e2e', () => {
     process.env.BETTER_AUTH_SECRET = 'test-secret-please-change-32-chars';
     process.env.BETTER_AUTH_URL = 'http://localhost:3000';
 
-    const appModule = (await import('../src/app.module')) as AppModuleImport;
+    const appModule = loadAppModule();
     const moduleRef = await Test.createTestingModule({
       imports: [appModule.AppModule],
     }).compile();
@@ -319,3 +319,14 @@ describe('Tenancy e2e', () => {
       .expect(404);
   });
 });
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === 'object');
+
+const loadAppModule = (): AppModuleImport => {
+  const moduleValue = require('../src/app.module') as unknown;
+  if (!isObject(moduleValue) || !('AppModule' in moduleValue)) {
+    throw new Error('Failed to load AppModule');
+  }
+  return moduleValue as AppModuleImport;
+};

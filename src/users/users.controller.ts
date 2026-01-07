@@ -64,10 +64,6 @@ export class UsersController {
     const profile = typed.userProfile ?? null;
     const role: UserRole | null = typed.accessContext?.role ?? null;
 
-    if (user && !profile) {
-      throw new ForbiddenException('User profile not configured');
-    }
-
     return {
       id: user?.id ?? null,
       email: user?.email ?? null,

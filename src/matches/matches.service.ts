@@ -24,12 +24,9 @@ import type { RankingEntry } from './interfaces/ranking-entry.interface';
 import { StructuredLoggerService } from '../common/logger/logger.service';
 import { clampPagination } from '../common/pagination/pagination.util';
 
-const ELO_INITIAL_RATING = 1500;
-const ELO_K_SINGLES = 32;
-const ELO_K_DOUBLES = 24;
-const RESULT_TO_SCORE: Record<'WIN' | 'DRAW' | 'LOSS', number> = {
-  WIN: 1,
-  DRAW: 0.5,
+const RESULT_TO_POINTS: Record<'WIN' | 'DRAW' | 'LOSS', number> = {
+  WIN: 10,
+  DRAW: 5,
   LOSS: 0,
 };
 
@@ -476,7 +473,8 @@ export class MatchesService {
     this.ensureCategoryAccess(category, context);
 
     const matches = await this.matchModel
-      .find({ categoryId })
+      // Always use persisted matches scoped to the category's club.
+      .find({ categoryId, clubId: this.toId(category.clubId) })
       .sort({ playedAt: 1, createdAt: 1 })
       .lean()
       .exec();
@@ -490,22 +488,61 @@ export class MatchesService {
       };
     }
 
-    const ratingMap = new Map<
+    const statsMap = new Map<
       string,
       {
-        rating: number;
+        points: number;
         wins: number;
         losses: number;
         draws: number;
         matches: number;
         lastMatchAt: Date | null;
+        members?: string[];
       }
     >();
 
-    matches.forEach((match) => {
-      if (!match.teams || match.teams.length !== 2) {
-        return;
+    const getOrCreateStats = (key: string) => {
+      if (!statsMap.has(key)) {
+        statsMap.set(key, {
+          points: 0,
+          wins: 0,
+          losses: 0,
+          draws: 0,
+          matches: 0,
+          lastMatchAt: null,
+        });
       }
+      return statsMap.get(key)!;
+    };
+
+    const updateStats = (
+      key: string,
+      result: 'WIN' | 'DRAW' | 'LOSS',
+      matchDate: Date,
+      members?: string[],
+    ) => {
+      const state = getOrCreateStats(key);
+      state.points += RESULT_TO_POINTS[result];
+      state.matches += 1;
+      state.lastMatchAt = matchDate;
+      if (result === 'WIN') {
+        state.wins += 1;
+      } else if (result === 'LOSS') {
+        state.losses += 1;
+      } else {
+        state.draws += 1;
+      }
+      if (members) {
+        state.members = members;
+      }
+    };
+
+    const buildTeamKey = (members: string[]) =>
+      members.map((member) => this.toId(member)).sort().join(':');
+
+    const isDoubles = Boolean(category.isDoubles);
+
+    matches.forEach((match) => {
       const participantResults = new Map<string, 'WIN' | 'DRAW' | 'LOSS'>();
       (match.participants ?? []).forEach((participant) => {
         participantResults.set(
@@ -513,94 +550,126 @@ export class MatchesService {
           participant.result,
         );
       });
-
-      const teamScores = match.teams.map((team) => {
-        if (!team.players || team.players.length === 0) {
-          return 0.5;
-        }
-        const firstPlayer = this.toId(team.players[0]);
-        const result = participantResults.get(firstPlayer) ?? 'DRAW';
-        return RESULT_TO_SCORE[result];
-      });
-
-      const teamRatings = match.teams.map((team) => {
-        const members = team.players ?? [];
-        if (members.length === 0) {
-          return ELO_INITIAL_RATING;
-        }
-        const total = members.reduce((sum, playerId) => {
-          const id = this.toId(playerId);
-          const state = this.getOrCreateRatingState(ratingMap, id);
-          return sum + state.rating;
-        }, 0);
-        return total / members.length;
-      });
-
-      const kFactor =
-        match.format === 'DOUBLES' ? ELO_K_DOUBLES : ELO_K_SINGLES;
-      const expectedTeamA =
-        1 / (1 + Math.pow(10, (teamRatings[1] - teamRatings[0]) / 400));
-      const expectedTeamB = 1 - expectedTeamA;
-      const actualTeamA = teamScores[0];
-      const actualTeamB = teamScores[1];
-      const deltaA = kFactor * (actualTeamA - expectedTeamA);
-      const deltaB = kFactor * (actualTeamB - expectedTeamB);
       const matchDate =
         this.coerceDate(match.playedAt) ??
         this.coerceDate(match.createdAt) ??
         new Date();
 
-      match.teams.forEach((team, index) => {
-        const delta = index === 0 ? deltaA : deltaB;
-        const score = teamScores[index];
-        const members = team.players ?? [];
-        members.forEach((playerId) => {
-          const id = this.toId(playerId);
-          const state = this.getOrCreateRatingState(ratingMap, id);
-          state.rating += delta;
-          state.matches += 1;
-          state.lastMatchAt = matchDate;
-          if (score === 1) {
-            state.wins += 1;
-          } else if (score === 0) {
-            state.losses += 1;
-          } else {
-            state.draws += 1;
+      if (isDoubles) {
+        (match.teams ?? []).forEach((team) => {
+          const members = (team.players ?? []).map((playerId) =>
+            this.toId(playerId),
+          );
+          if (members.length === 0) {
+            return;
           }
+          const result = participantResults.get(members[0]) ?? 'DRAW';
+          updateStats(buildTeamKey(members), result, matchDate, members);
         });
+        return;
+      }
+
+      const participants =
+        match.participants?.length > 0
+          ? match.participants
+          : (match.teams ?? [])
+              .flatMap((team) => team.players ?? [])
+              .map((playerId) => ({
+                playerId,
+                result: 'DRAW' as const,
+              }));
+      participants.forEach((participant) => {
+        const id = this.toId(participant.playerId);
+        updateStats(id, participant.result, matchDate);
       });
     });
 
-    const playerIds = Array.from(ratingMap.keys());
-    const players = await this.playerModel
-      .find({ _id: { $in: playerIds } })
-      .lean()
-      .exec();
-    const playerMap = new Map(
-      players.map((player) => [this.toId(player._id), player]),
-    );
+    let ranking: RankingEntry[] = [];
 
-    const ranking = playerIds
-      .map((playerId) => ({ playerId, state: ratingMap.get(playerId)! }))
-      .sort((a, b) => b.state.rating - a.state.rating)
-      .map((entry, index) => {
-        const player = playerMap.get(entry.playerId);
-        return {
-          _id: entry.playerId,
-          email: player?.email ?? '',
-          phone: player?.phone ?? '',
-          clubId: player ? this.toId(player.clubId) : '',
-          name: player?.name ?? 'Unknown Player',
-          rating: Math.round(entry.state.rating * 100) / 100,
-          position: index + 1,
-          pictureUrl: player?.pictureUrl ?? '',
-          wins: entry.state.wins,
-          losses: entry.state.losses,
-          draws: entry.state.draws,
-          matches: entry.state.matches,
-          lastMatchAt: entry.state.lastMatchAt,
-        };
+    if (isDoubles) {
+      const teamEntries = Array.from(statsMap.entries());
+      const memberIds = new Set<string>();
+      teamEntries.forEach(([, state]) => {
+        state.members?.forEach((member) => memberIds.add(member));
       });
+      const players = await this.playerModel
+        .find({ _id: { $in: Array.from(memberIds) } })
+        .lean()
+        .exec();
+      const playerMap = new Map(
+        players.map((player) => [this.toId(player._id), player]),
+      );
+
+      ranking = teamEntries
+        .map(([teamKey, state]) => {
+          const members = state.members ?? teamKey.split(':');
+          const memberNames = members
+            .map((member) => playerMap.get(member)?.name ?? 'Unknown Player')
+            .sort((a, b) => a.localeCompare(b));
+          const name = memberNames.join(' / ');
+          return {
+            _id: teamKey,
+            email: '',
+            phone: '',
+            clubId: this.toId(category.clubId),
+            name,
+            rating: state.points,
+            points: state.points,
+            position: 0,
+            pictureUrl: '',
+            wins: state.wins,
+            losses: state.losses,
+            draws: state.draws,
+            matches: state.matches,
+            lastMatchAt: state.lastMatchAt,
+          };
+        })
+        .sort((a, b) => {
+          if (b.points !== a.points) return b.points - a.points;
+          if (b.wins !== a.wins) return b.wins - a.wins;
+          if (b.draws !== a.draws) return b.draws - a.draws;
+          return a.name.localeCompare(b.name);
+        })
+        .map((entry, index) => ({ ...entry, position: index + 1 }));
+    } else {
+      const playerIds = Array.from(statsMap.keys());
+      const players = await this.playerModel
+        .find({ _id: { $in: playerIds } })
+        .lean()
+        .exec();
+      const playerMap = new Map(
+        players.map((player) => [this.toId(player._id), player]),
+      );
+
+      ranking = playerIds
+        .map((playerId) => ({ playerId, state: statsMap.get(playerId)! }))
+        .map((entry) => {
+          const player = playerMap.get(entry.playerId);
+          return {
+            _id: entry.playerId,
+            email: player?.email ?? '',
+            phone: player?.phone ?? '',
+            clubId: player ? this.toId(player.clubId) : '',
+            name: player?.name ?? 'Unknown Player',
+            rating: entry.state.points,
+            points: entry.state.points,
+            position: 0,
+            pictureUrl: player?.pictureUrl ?? '',
+            wins: entry.state.wins,
+            losses: entry.state.losses,
+            draws: entry.state.draws,
+            matches: entry.state.matches,
+            lastMatchAt: entry.state.lastMatchAt,
+          };
+        })
+        .sort((a, b) => {
+          if (b.points !== a.points) return b.points - a.points;
+          if (b.wins !== a.wins) return b.wins - a.wins;
+          if (b.draws !== a.draws) return b.draws - a.draws;
+          return a.name.localeCompare(b.name);
+        })
+        .map((entry, index) => ({ ...entry, position: index + 1 }));
+    }
 
     this.logDomainEvent('ranking.rebuild', {
       categoryId,
@@ -619,33 +688,6 @@ export class MatchesService {
       limit,
       total: filtered.length,
     };
-  }
-
-  private getOrCreateRatingState(
-    ratingMap: Map<
-      string,
-      {
-        rating: number;
-        wins: number;
-        losses: number;
-        draws: number;
-        matches: number;
-        lastMatchAt: Date | null;
-      }
-    >,
-    playerId: string,
-  ) {
-    if (!ratingMap.has(playerId)) {
-      ratingMap.set(playerId, {
-        rating: ELO_INITIAL_RATING,
-        wins: 0,
-        losses: 0,
-        draws: 0,
-        matches: 0,
-        lastMatchAt: null,
-      });
-    }
-    return ratingMap.get(playerId)!;
   }
 
   private resolveClubScope(

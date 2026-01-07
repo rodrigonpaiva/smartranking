@@ -71,6 +71,10 @@ export class AccessContextGuard implements CanActivate {
       return true;
     }
 
+    if (this.isMeRequest(request)) {
+      return true;
+    }
+
     this.applyTenantRules(request);
     return true;
   }
@@ -95,8 +99,7 @@ export class AccessContextGuard implements CanActivate {
       }
       const canBootstrap = await this.canBootstrapProfile(request);
       if (canBootstrap) {
-        request.userProfile = null;
-        request.accessContext = null;
+        this.attachBootstrapAccessContext(request);
         return false;
       }
       throw new ForbiddenException('User profile not configured');
@@ -250,6 +253,35 @@ export class AccessContextGuard implements CanActivate {
     if (requestedUserId !== request.user?.id) return false;
     if (requestedRole !== Roles.SYSTEM_ADMIN) return false;
     return true;
+  }
+
+  private attachBootstrapAccessContext(request: RequestWithUser): void {
+    request.userProfile = null;
+    const userId = request.user?.id;
+    if (!userId) {
+      request.accessContext = null;
+      return;
+    }
+    const body = this.asRecord(request.body);
+    const role = this.getStringField(body, 'role') as UserRole | undefined;
+    const clubId = this.getStringField(body, 'clubId');
+    const playerId = this.getStringField(body, 'playerId');
+    if (!role) {
+      request.accessContext = null;
+      return;
+    }
+    const context: AccessContext = {
+      userId,
+      role,
+      tenantId: request.tenantId ?? null,
+      clubId,
+      playerId,
+    };
+    request.accessContext = context;
+    this.requestContext.registerAccessContext(context);
+    if (clubId) {
+      this.activateTenant(request, clubId);
+    }
   }
 
   private isMeRequest(request: RequestWithUser): boolean {

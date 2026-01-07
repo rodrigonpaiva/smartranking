@@ -1,9 +1,7 @@
 import { Transform } from 'class-transformer';
 import {
-  IsDefined,
   IsIn,
   IsMongoId,
-  IsNotEmpty,
   ValidateIf,
 } from 'class-validator';
 import { trim } from '../../common/transformers/trim.transformer';
@@ -18,9 +16,7 @@ export class CreateSelfProfileDto {
   @IsMongoId()
   readonly clubId: string;
 
-  @ValidateIf((dto: CreateSelfProfileDto) => dto.role === Roles.PLAYER)
-  @IsDefined()
-  @IsNotEmpty()
+  @ValidateIf((dto: CreateSelfProfileDto) => Boolean(dto.playerId))
   @IsMongoId()
   readonly playerId?: string;
 }
