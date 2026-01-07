@@ -3,7 +3,6 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
-  IsNotEmpty,
   IsOptional,
   IsString,
   ValidateNested,
@@ -14,16 +13,17 @@ import { CategoryEventDto } from './cretae-categorie.dto';
 export class UpdateCategoryDto {
   @IsString()
   @IsOptional()
-  description: string;
+  description?: string;
 
   @ApiProperty({ type: Boolean, default: false })
-  @IsNotEmpty()
+  @IsOptional()
   @IsBoolean()
   isDoubles?: boolean;
 
+  @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => CategoryEventDto)
-  events: Array<CategoryEventDto>;
+  events?: Array<CategoryEventDto>;
 }

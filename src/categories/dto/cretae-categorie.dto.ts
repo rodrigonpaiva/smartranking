@@ -6,6 +6,7 @@ import {
   IsIn,
   IsNotEmpty,
   IsNumber,
+  IsOptional,
   IsString,
   ValidateNested,
 } from 'class-validator';
@@ -35,15 +36,16 @@ export class CreateCategoryDto {
   readonly description: string;
 
   @ApiProperty({ type: Boolean, default: false })
-  @IsNotEmpty()
+  @IsOptional()
   @IsBoolean()
   readonly isDoubles?: boolean;
 
+  @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => CategoryEventDto)
-  readonly events: Array<CategoryEventDto>;
+  readonly events?: Array<CategoryEventDto>;
 
   @IsString()
   @IsNotEmpty()
