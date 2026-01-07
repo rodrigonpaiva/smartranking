@@ -16,10 +16,25 @@ if (!mongoDbName) {
 
 const client = new MongoClient(mongoUri);
 const db = client.db(mongoDbName);
-const trustedOrigins = [
-  process.env.BETTER_AUTH_URL ?? 'http://localhost:8080',
-  'http://localhost:5173',
-];
+const parseTrustedOrigins = (): string[] => {
+  const origins: string[] = [];
+  origins.push(process.env.BETTER_AUTH_URL ?? 'http://localhost:8080');
+
+  const frontendOrigins = process.env.CORS_ALLOWED_ORIGINS;
+  if (frontendOrigins) {
+    const parsed = frontendOrigins
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean);
+    origins.push(...parsed);
+  } else if (process.env.NODE_ENV !== 'production') {
+    origins.push('http://localhost:5173');
+  }
+
+  return [...new Set(origins)];
+};
+
+const trustedOrigins = parseTrustedOrigins();
 const rateLimitMax = Number(process.env.BETTER_AUTH_RATE_LIMIT_MAX ?? '100');
 const rateLimitWindow = Number(
   process.env.BETTER_AUTH_RATE_LIMIT_WINDOW ?? '60',

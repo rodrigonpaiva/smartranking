@@ -132,8 +132,23 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
+  const parseAllowedOrigins = (
+    envValue?: string,
+  ): string | string[] | boolean => {
+    if (!envValue) {
+      return process.env.NODE_ENV === 'production'
+        ? false
+        : 'http://localhost:5173';
+    }
+    const origins = envValue
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean);
+    return origins.length === 1 ? origins[0] : origins;
+  };
+
   const corsOptions: CorsOptions = {
-    origin: 'http://localhost:5173',
+    origin: parseAllowedOrigins(process.env.CORS_ALLOWED_ORIGINS),
     credentials: true,
     allowedHeaders: ['Content-Type', 'x-tenant-id', 'x-request-id'],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
