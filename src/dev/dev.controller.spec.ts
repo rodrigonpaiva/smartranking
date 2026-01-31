@@ -13,16 +13,16 @@ const mockLoggerService = {
 
 // Mock the auth module
 jest.mock('../auth/auth', () => ({
-  auth: {
+  getAuth: () => ({
     $context: Promise.resolve({
       internalAdapter: {
         findUserByEmail: jest.fn(),
       },
     }),
-  },
+  }),
 }));
 
-import { auth } from '../auth/auth';
+import { getAuth } from '../auth/auth';
 
 describe('DevController', () => {
   let controller: DevController;
@@ -65,9 +65,15 @@ describe('DevController', () => {
 
     it('should allow access in non-production environment', async () => {
       process.env.NODE_ENV = 'development';
-      const mockContext = await auth.$context;
-      (mockContext.internalAdapter.findUserByEmail as jest.Mock).mockResolvedValue({
-        user: { id: 'user-1', email: 'test@example.com', createdAt: new Date() },
+      const mockContext = await getAuth().$context;
+      (
+        mockContext.internalAdapter.findUserByEmail as jest.Mock
+      ).mockResolvedValue({
+        user: {
+          id: 'user-1',
+          email: 'test@example.com',
+          createdAt: new Date(),
+        },
       });
 
       const result = await controller.getAuthUser(
@@ -82,8 +88,10 @@ describe('DevController', () => {
     it('should allow access in production with debug flag', async () => {
       process.env.NODE_ENV = 'production';
       process.env.DEV_DEBUG_AUTH = 'true';
-      const mockContext = await auth.$context;
-      (mockContext.internalAdapter.findUserByEmail as jest.Mock).mockResolvedValue({
+      const mockContext = await getAuth().$context;
+      (
+        mockContext.internalAdapter.findUserByEmail as jest.Mock
+      ).mockResolvedValue({
         user: { id: 'user-1', email: 'test@example.com' },
       });
 
@@ -113,8 +121,10 @@ describe('DevController', () => {
 
     it('should return exists: false when user not found', async () => {
       process.env.NODE_ENV = 'development';
-      const mockContext = await auth.$context;
-      (mockContext.internalAdapter.findUserByEmail as jest.Mock).mockResolvedValue({
+      const mockContext = await getAuth().$context;
+      (
+        mockContext.internalAdapter.findUserByEmail as jest.Mock
+      ).mockResolvedValue({
         user: null,
       });
 
@@ -129,8 +139,10 @@ describe('DevController', () => {
 
     it('should log lookup request', async () => {
       process.env.NODE_ENV = 'development';
-      const mockContext = await auth.$context;
-      (mockContext.internalAdapter.findUserByEmail as jest.Mock).mockResolvedValue({
+      const mockContext = await getAuth().$context;
+      (
+        mockContext.internalAdapter.findUserByEmail as jest.Mock
+      ).mockResolvedValue({
         user: { id: 'user-1', email: 'test@example.com' },
       });
 
@@ -147,8 +159,10 @@ describe('DevController', () => {
 
     it('should trim email before lookup', async () => {
       process.env.NODE_ENV = 'development';
-      const mockContext = await auth.$context;
-      (mockContext.internalAdapter.findUserByEmail as jest.Mock).mockResolvedValue({
+      const mockContext = await getAuth().$context;
+      (
+        mockContext.internalAdapter.findUserByEmail as jest.Mock
+      ).mockResolvedValue({
         user: { id: 'user-1', email: 'test@example.com' },
       });
 
