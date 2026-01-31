@@ -17,7 +17,7 @@ import { UserProfilesService } from '../users/users.service';
 import { Roles } from '../auth/roles';
 import type { AccessContext } from '../auth/access-context.types';
 import { Match } from '../matches/interfaces/match.interface';
-import { auth } from '../auth/auth';
+import { getAuth } from '../auth/auth';
 import { StructuredLoggerService } from '../common/logger/logger.service';
 import type { CreateMatchDto } from '../matches/dtos/create-match.dto';
 
@@ -809,7 +809,7 @@ async function seedAuthUsers(): Promise<SeededAccounts> {
 async function ensureAuthUser(credentials: SeedUserInput): Promise<SeededUser> {
   const isDev = process.env.NODE_ENV !== 'production';
   try {
-    const result = await auth.api?.signUpEmail({
+    const result = await getAuth().api?.signUpEmail({
       body: {
         email: credentials.email,
         password: credentials.password,
@@ -829,7 +829,7 @@ async function ensureAuthUser(credentials: SeedUserInput): Promise<SeededUser> {
     return { id: fallback.user.id, email: fallback.user.email };
   }
 
-  const context = await auth.$context;
+  const context = await getAuth().$context;
   const existing = await context.internalAdapter.findUserByEmail(
     credentials.email,
     { includeAccounts: true },
@@ -878,7 +878,7 @@ async function trySignIn(
 ): Promise<{ user?: SeededUser } | null> {
   try {
     return (
-      (await auth.api?.signInEmail({
+      (await getAuth().api?.signInEmail({
         body: { email: credentials.email, password: credentials.password },
       })) ?? null
     );

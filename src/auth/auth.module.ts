@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { AuthModule as BetterAuthModule } from '@thallesp/nestjs-better-auth';
-import { auth } from './auth';
+import { getAuth } from './auth';
 
 @Module({
   imports: [
     BetterAuthModule.forRoot({
-      auth,
+      auth: getAuth(),
       disableControllers: true,
     }),
   ],

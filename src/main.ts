@@ -14,7 +14,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import type { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.interface';
 import { AppModule } from './app.module';
-import { auth } from './auth/auth';
+import { getAuth } from './auth/auth';
 import {
   persistOpenApiDocument,
   setupSwagger,
@@ -239,7 +239,7 @@ async function bootstrap(): Promise<void> {
       next();
     },
   );
-  const authHandler: RequestHandler = toNodeHandler(auth);
+  const authHandler: RequestHandler = toNodeHandler(getAuth());
   httpAdapter.all('/api/auth', authHandler);
   httpAdapter.all(/\/api\/auth(\/.*)?$/, authHandler);
   httpAdapter.use(async (req: Request, _res: Response, next: NextFunction) => {
@@ -249,7 +249,7 @@ async function bootstrap(): Promise<void> {
 
     const requestWithUser = req as RequestWithUser;
     try {
-      const getSession = auth.api?.getSession as GetSessionFn | undefined;
+      const getSession = getAuth().api?.getSession as GetSessionFn | undefined;
       if (getSession) {
         const session = await getSession({ headers: req.headers });
         requestWithUser.user = session?.user ?? null;

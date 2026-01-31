@@ -7,7 +7,7 @@ import {
   Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { auth } from '../auth/auth';
+import { getAuth } from '../auth/auth';
 import { Public } from '../auth/public.decorator';
 import { StructuredLoggerService } from '../common/logger/logger.service';
 
@@ -36,7 +36,7 @@ export class DevController {
       throw new BadRequestException('email query param is required');
     }
 
-    const context = await auth.$context;
+    const context = await getAuth().$context;
     const record = await context.internalAdapter.findUserByEmail(normalized);
     const user = record?.user;
     const exists = Boolean(user?.id);
