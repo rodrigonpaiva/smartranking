@@ -106,7 +106,7 @@ describe('Security e2e', () => {
       res.status(200).json({ ok: true });
     };
     httpAdapter.all('/api/auth', authHandler);
-    httpAdapter.all('/api/auth/*', authHandler);
+    httpAdapter.all(/\/api\/auth(\/.*)?$/, authHandler);
     httpAdapter.use(express.json());
     httpAdapter.use(express.urlencoded({ extended: true }));
 
