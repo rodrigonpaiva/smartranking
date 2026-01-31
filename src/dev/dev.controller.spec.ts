@@ -12,15 +12,19 @@ const mockLoggerService = {
 };
 
 // Mock the auth module
-jest.mock('../auth/auth', () => ({
-  getAuth: () => ({
-    $context: Promise.resolve({
-      internalAdapter: {
-        findUserByEmail: jest.fn(),
-      },
-    }),
-  }),
-}));
+jest.mock('../auth/auth', () => {
+  const context = {
+    internalAdapter: {
+      findUserByEmail: jest.fn(),
+    },
+  };
+  const auth = {
+    $context: Promise.resolve(context),
+  };
+  return {
+    getAuth: () => auth,
+  };
+});
 
 import { getAuth } from '../auth/auth';
 
