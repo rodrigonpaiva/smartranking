@@ -17,18 +17,24 @@ import { PaginationQueryDto } from '../common/dtos/pagination-query.dto';
 import { clampPagination } from '../common/pagination/pagination.util';
 import { AuditService } from '../audit/audit.service';
 import { AuditEvent } from '../audit/audit.events';
+import { TenancyService } from '../tenancy/tenancy.service';
 
 @Injectable()
 export class ClubsService {
   constructor(
     @InjectModel('Club') private readonly clubModel: Model<Club>,
     private readonly auditService: AuditService,
+    private readonly tenancyService: TenancyService,
   ) {}
 
   async createClub(
     createClubDto: CreateClubDto,
     context: AccessContext,
   ): Promise<Club> {
+    // Club creation defines the tenant id as the club _id, so we must bypass
+    // the current request tenant scoping when persisting the club itself.
+    this.tenancyService.disableTenancyForCurrentScope();
+
     const existingClub = await this.clubModel
       .findOne({ slug: createClubDto.slug })
       .exec();
@@ -53,6 +59,10 @@ export class ClubsService {
   async registerClub(
     createClubDto: CreateClubDto,
   ): Promise<Pick<Club, '_id' | 'name' | 'slug'>> {
+    // Public registration must also bypass the current tenant scoping because
+    // the club document is the tenant root.
+    this.tenancyService.disableTenancyForCurrentScope();
+
     const existingClub = await this.clubModel
       .findOne({ slug: createClubDto.slug })
       .exec();
