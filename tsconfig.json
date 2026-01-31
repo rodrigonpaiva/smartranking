@@ -25,7 +25,7 @@
       "./src/types"
     ]
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "test/**/*.ts"],
+  "include": ["src/**/*.ts", "src/**/*.d.ts"],
   "ts-node": {
     "files": true
   }
