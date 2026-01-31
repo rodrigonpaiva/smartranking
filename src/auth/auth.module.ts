@@ -9,6 +9,9 @@ import { getAuth } from './auth';
         auth: getAuth(),
       }),
       disableControllers: true,
+      // The API uses Better Auth via the Express handler mounted in main.ts.
+      // Nest-level auth guard would conflict with our custom session/tenant guards.
+      disableGlobalAuthGuard: true,
     }),
   ],
 })
