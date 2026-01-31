@@ -4,8 +4,10 @@ import { getAuth } from './auth';
 
 @Module({
   imports: [
-    BetterAuthModule.forRoot({
-      auth: getAuth(),
+    BetterAuthModule.forRootAsync({
+      useFactory: () => ({
+        auth: getAuth(),
+      }),
       disableControllers: true,
     }),
   ],
