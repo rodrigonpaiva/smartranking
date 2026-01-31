@@ -9,6 +9,7 @@ import { ClubsService } from './clubs.service';
 import { AuditService } from '../audit/audit.service';
 import { Roles } from '../auth/roles';
 import type { AccessContext } from '../auth/access-context.types';
+import { TenancyService } from '../tenancy/tenancy.service';
 
 const createMockClubModel = () => {
   const MockModel = function (data: unknown) {
@@ -62,6 +63,10 @@ describe('ClubsService', () => {
         ClubsService,
         { provide: getModelToken('Club'), useValue: clubModel },
         { provide: AuditService, useValue: mockAuditService },
+        {
+          provide: TenancyService,
+          useValue: { disableTenancyForCurrentScope: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -176,7 +181,10 @@ describe('ClubsService', () => {
       });
       clubModel.countDocuments.mockResolvedValue(1);
 
-      const result = await service.getAllClubs({ page: 1, limit: 10 }, clubContext);
+      const result = await service.getAllClubs(
+        { page: 1, limit: 10 },
+        clubContext,
+      );
 
       expect(result.items).toHaveLength(1);
     });
