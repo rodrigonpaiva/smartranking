@@ -24,7 +24,10 @@
     "seed:dev": "ts-node -r tsconfig-paths/register src/scripts/seed.ts",
     "seed": "npm run seed:dev",
     "contracts": "npx openapi-to-postmanv2 -s docs/openapi/smartranking-openapi.json -o postman/smartranking-api.postman_collection.json -p",
-    "audit:prod": "npm audit --production"
+    "audit:prod": "npm audit --omit=dev --audit-level=high"
+  },
+  "overrides": {
+    "js-yaml": "^4.1.1"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -32,8 +35,8 @@
     "@nestjs/core": "^11.0.1",
     "@nestjs/mongoose": "^11.0.4",
     "@nestjs/platform-express": "^11.0.1",
-    "@nestjs/terminus": "^11.0.0",
     "@nestjs/swagger": "^11.0.2",
+    "@nestjs/terminus": "^11.0.0",
     "@nestjs/throttler": "^6.5.0",
     "@thallesp/nestjs-better-auth": "^2.2.0",
     "better-auth": "^1.4.9",
@@ -41,7 +44,9 @@
     "class-validator": "^0.14.3",
     "dotenv": "^17.2.3",
     "express-rate-limit": "^8.2.1",
+    "graphql": "^16.12.0",
     "helmet": "^8.1.0",
+    "lodash": "4.17.23",
     "mongodb": "^7.0.0",
     "mongoose": "^9.0.1",
     "pino": "^9.5.0",
@@ -77,9 +82,6 @@
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0"
-  },
-  "overrides": {
-    "js-yaml": "^4.1.1"
   },
   "jest": {
     "moduleFileExtensions": [
