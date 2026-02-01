@@ -79,7 +79,9 @@ describe('NoCacheInterceptor', () => {
     });
 
     it('should pass through response data', (done) => {
-      mockCallHandler.handle = jest.fn().mockReturnValue(of({ result: 'test' }));
+      mockCallHandler.handle = jest
+        .fn()
+        .mockReturnValue(of({ result: 'test' }));
 
       interceptor.intercept(mockExecutionContext, mockCallHandler).subscribe({
         next: (value) => {

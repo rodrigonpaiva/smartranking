@@ -296,6 +296,9 @@ export class MatchesService {
       ...dto,
       decidingSetType,
       participants,
+      // Make tenant explicit to avoid relying on AsyncLocalStorage propagation
+      // into mongoose hooks in test/runtime environments.
+      tenant: context.tenantId ?? undefined,
       playedAt: dto.playedAt ? new Date(dto.playedAt) : new Date(),
     });
     const persisted = await matchCreated.save();

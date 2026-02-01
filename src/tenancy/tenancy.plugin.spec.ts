@@ -2,7 +2,7 @@ import type { Query } from 'mongoose';
 import { tenancyContext } from './tenancy.context';
 import { tenancyTestUtils } from './tenancy.plugin';
 
-class FakeQuery implements Partial<Query<unknown, unknown>> {
+class FakeQuery {
   private readonly filter: Record<string, unknown> = {};
   private readonly options: Record<string, unknown> = {};
   private readonly ors: Array<Record<string, unknown>[]> = [];
@@ -49,7 +49,10 @@ describe('tenancy plugin helpers', () => {
         disableTenancy: false,
       },
       () => {
-        applyTenantCriteria(query as Query<unknown, unknown>, 'tenant');
+        applyTenantCriteria(
+          query as unknown as Query<unknown, unknown>,
+          'tenant',
+        );
       },
     );
 
@@ -65,7 +68,10 @@ describe('tenancy plugin helpers', () => {
         disableTenancy: false,
       },
       () => {
-        applyTenantCriteria(query as Query<unknown, unknown>, 'tenant');
+        applyTenantCriteria(
+          query as unknown as Query<unknown, unknown>,
+          'tenant',
+        );
       },
     );
 
@@ -86,7 +92,10 @@ describe('tenancy plugin helpers', () => {
         disableTenancy: true,
       },
       () => {
-        applyTenantCriteria(query as Query<unknown, unknown>, 'tenant');
+        applyTenantCriteria(
+          query as unknown as Query<unknown, unknown>,
+          'tenant',
+        );
       },
     );
 
@@ -103,7 +112,10 @@ describe('tenancy plugin helpers', () => {
         disableTenancy: false,
       },
       () => {
-        applyTenantCriteria(query as Query<unknown, unknown>, 'tenant');
+        applyTenantCriteria(
+          query as unknown as Query<unknown, unknown>,
+          'tenant',
+        );
       },
     );
 

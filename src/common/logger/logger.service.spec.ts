@@ -92,7 +92,9 @@ describe('StructuredLoggerService', () => {
     it('should handle warning with context', () => {
       requestContextService.get.mockReturnValue(undefined);
 
-      expect(() => service.warn('warning message', 'WarnContext')).not.toThrow();
+      expect(() =>
+        service.warn('warning message', 'WarnContext'),
+      ).not.toThrow();
     });
   });
 

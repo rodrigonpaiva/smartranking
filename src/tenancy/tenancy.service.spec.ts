@@ -11,7 +11,9 @@ jest.mock('./tenancy.context', () => ({
 
 describe('TenancyService', () => {
   let service: TenancyService;
-  const mockTenancyContext = tenancyContext as jest.Mocked<typeof tenancyContext>;
+  const mockTenancyContext = tenancyContext as jest.Mocked<
+    typeof tenancyContext
+  >;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -30,7 +32,11 @@ describe('TenancyService', () => {
     });
 
     it('should return scope when set', () => {
-      const mockScope = { tenant: 'tenant-1', disableTenancy: false };
+      const mockScope = {
+        tenant: 'tenant-1',
+        allowMissingTenant: false,
+        disableTenancy: false,
+      };
       mockTenancyContext.get.mockReturnValue(mockScope);
 
       expect(service.scope).toEqual(mockScope);
@@ -45,7 +51,11 @@ describe('TenancyService', () => {
     });
 
     it('should return tenant id when scope is set', () => {
-      mockTenancyContext.get.mockReturnValue({ tenant: 'my-tenant' });
+      mockTenancyContext.get.mockReturnValue({
+        tenant: 'my-tenant',
+        allowMissingTenant: false,
+        disableTenancy: false,
+      });
 
       expect(service.tenant).toBe('my-tenant');
     });
@@ -61,7 +71,11 @@ describe('TenancyService', () => {
     });
 
     it('should set disableTenancy to true when scope exists', () => {
-      const existingScope = { tenant: 'tenant-1', disableTenancy: false };
+      const existingScope = {
+        tenant: 'tenant-1',
+        allowMissingTenant: false,
+        disableTenancy: false,
+      };
       mockTenancyContext.get.mockReturnValue(existingScope);
 
       service.disableTenancyForCurrentScope();
@@ -75,6 +89,7 @@ describe('TenancyService', () => {
     it('should preserve other scope properties when disabling', () => {
       const existingScope = {
         tenant: 'tenant-1',
+        allowMissingTenant: false,
         disableTenancy: false,
       };
       mockTenancyContext.get.mockReturnValue(existingScope);
@@ -100,7 +115,11 @@ describe('TenancyService', () => {
     });
 
     it('should update tenant in existing scope', () => {
-      const existingScope = { tenant: 'old-tenant', disableTenancy: false };
+      const existingScope = {
+        tenant: 'old-tenant',
+        allowMissingTenant: false,
+        disableTenancy: false,
+      };
       mockTenancyContext.get.mockReturnValue(existingScope);
 
       service.setTenant('new-tenant');
@@ -112,13 +131,18 @@ describe('TenancyService', () => {
     });
 
     it('should preserve disableTenancy flag when updating tenant', () => {
-      const existingScope = { tenant: 'old-tenant', disableTenancy: true };
+      const existingScope = {
+        tenant: 'old-tenant',
+        allowMissingTenant: false,
+        disableTenancy: true,
+      };
       mockTenancyContext.get.mockReturnValue(existingScope);
 
       service.setTenant('new-tenant');
 
       expect(mockTenancyContext.set).toHaveBeenCalledWith({
         tenant: 'new-tenant',
+        allowMissingTenant: false,
         disableTenancy: true,
       });
     });

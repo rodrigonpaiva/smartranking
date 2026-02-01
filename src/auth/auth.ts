@@ -66,7 +66,8 @@ export const getAuth = (): ReturnType<typeof betterAuth> => {
     advanced: {
       useSecureCookies: isProduction,
       disableOriginCheck:
-        process.env.BETTER_AUTH_DISABLE_ORIGIN_CHECK === 'true' || !isProduction,
+        process.env.BETTER_AUTH_DISABLE_ORIGIN_CHECK === 'true' ||
+        !isProduction,
       defaultCookieAttributes: {
         sameSite,
         httpOnly: true,

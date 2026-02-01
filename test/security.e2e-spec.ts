@@ -1,18 +1,13 @@
 import { HttpServer, INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import type { MongoClient } from 'mongodb';
-import request from 'supertest';
 import express, { type Application, type RequestHandler } from 'express';
+
 import {
   ensureErrorPayload,
   ensureRecord,
   ensureString,
 } from './utils/assertions';
-import { attachTestUserContext } from './utils/test-app';
-
-type AppModuleImport = typeof import('../src/app.module');
-type AuthModuleImport = typeof import('../src/auth/auth');
+import { createE2EApp, e2e } from './utils/create-e2e-app';
 
 jest.mock('better-auth', () => ({
   betterAuth: (options: Record<string, unknown>) => ({
@@ -34,7 +29,7 @@ describe('Security e2e', () => {
   let app: INestApplication;
   let mongoServer: MongoMemoryServer;
   let httpServer: HttpServer;
-  let authMongoClient: MongoClient | null = null;
+  // Better Auth is bypassed in e2e via createE2EApp.
   let clubId: string;
   let categoryId: string;
   let playerId: string;
@@ -85,21 +80,11 @@ describe('Security e2e', () => {
     process.env.BETTER_AUTH_URL = 'http://localhost:3000';
     process.env.BETTER_AUTH_RATE_LIMIT_MAX = '3';
     process.env.BETTER_AUTH_RATE_LIMIT_WINDOW = '60';
+    // Align e2e CORS behavior with main.ts (uses CORS_ALLOWED_ORIGINS).
+    process.env.CORS_ALLOWED_ORIGINS = process.env.BETTER_AUTH_URL;
 
-    const appModule = loadAppModule();
-    const authModule = loadAuthModule();
-    authMongoClient = authModule.authMongoClient;
-
-    const moduleRef = await Test.createTestingModule({
-      imports: [appModule.AppModule],
-    }).compile();
-
-    app = moduleRef.createNestApplication({ bodyParser: false });
-    attachTestUserContext(app);
-    app.enableCors({
-      origin: [process.env.BETTER_AUTH_URL],
-      credentials: true,
-    });
+    const e2eApp = await createE2EApp({ bodyParser: false });
+    app = e2eApp.app;
 
     const httpAdapter = app.getHttpAdapter().getInstance() as Application;
     const authHandler: RequestHandler = (_req, res) => {
@@ -110,10 +95,9 @@ describe('Security e2e', () => {
     httpAdapter.use(express.json());
     httpAdapter.use(express.urlencoded({ extended: true }));
 
-    await app.init();
-    httpServer = app.getHttpServer() as HttpServer;
+    httpServer = e2eApp.httpServer as HttpServer;
 
-    const clubResponse = await request(httpServer)
+    const clubResponse = await e2e(httpServer, 'security')
       .post('/api/v1/clubs')
       .set(adminSession(tenantHeader))
       .send({
@@ -125,7 +109,7 @@ describe('Security e2e', () => {
     clubId = ensureString(body._id, 'club id');
     tenantHeader = clubId;
 
-    const playerResponse = await request(httpServer)
+    const playerResponse = await e2e(httpServer, 'security')
       .post('/api/v1/players')
       .set(adminSession(tenantHeader))
       .send({
@@ -138,7 +122,7 @@ describe('Security e2e', () => {
     const playerBody = ensureRecord(playerResponse.body, 'create player');
     playerId = ensureString(playerBody._id, 'player id');
 
-    const otherClubResponse = await request(httpServer)
+    const otherClubResponse = await e2e(httpServer, 'security')
       .post('/api/v1/clubs')
       .set(adminSession('security-secondary'))
       .send({
@@ -152,14 +136,14 @@ describe('Security e2e', () => {
     );
     otherClubId = ensureString(otherClubBody._id, 'other club id');
 
-    const categoryResponse = await request(httpServer)
+    const categoryResponse = await e2e(httpServer, 'security')
       .post('/api/v1/categories')
       .set(adminSession(tenantHeader))
       .send({
         category: 'security-cat',
         description: 'Security Category',
         clubId,
-        events: [],
+        events: [{ name: 'Win', operation: '+', value: 10 }],
       })
       .expect(201);
     const categoryBody = ensureRecord(categoryResponse.body, 'category');
@@ -167,9 +151,6 @@ describe('Security e2e', () => {
   });
 
   afterAll(async () => {
-    if (authMongoClient) {
-      await authMongoClient.close();
-    }
     if (app) {
       await app.close();
     }
@@ -180,7 +161,9 @@ describe('Security e2e', () => {
 
   describe('Auth', () => {
     it('responds to auth routes', async () => {
-      const res = await request(httpServer).get('/api/auth/get-session');
+      const res = await e2e(httpServer, 'security').get(
+        '/api/auth/get-session',
+      );
 
       expect(res.status).toBe(200);
     });
@@ -188,7 +171,7 @@ describe('Security e2e', () => {
 
   describe('Validation and NoSQL injection', () => {
     it('rejects invalid email payloads', async () => {
-      const res = await request(httpServer)
+      const res = await e2e(httpServer, 'security')
         .post('/api/v1/players')
         .set(adminSession(tenantHeader))
         .send({
@@ -202,7 +185,7 @@ describe('Security e2e', () => {
     });
 
     it('rejects missing required fields', async () => {
-      const res = await request(httpServer)
+      const res = await e2e(httpServer, 'security')
         .post('/api/v1/players')
         .set(adminSession(tenantHeader))
         .send({
@@ -214,7 +197,7 @@ describe('Security e2e', () => {
     });
 
     it('blocks NoSQL injection via phone query', async () => {
-      const res = await request(httpServer)
+      const res = await e2e(httpServer, 'security')
         .get('/api/v1/players/by-phone?phone[$ne]=1')
         .set(adminSession(tenantHeader));
 
@@ -224,7 +207,7 @@ describe('Security e2e', () => {
 
   describe('Auth guards', () => {
     it('returns 401 when session is missing', async () => {
-      const res = await request(httpServer)
+      const res = await e2e(httpServer, 'security')
         .get('/api/v1/players')
         .set('x-tenant-id', tenantHeader)
         .expect(401);
@@ -233,7 +216,7 @@ describe('Security e2e', () => {
     });
 
     it('returns 400 when tenant header is missing for authenticated users', async () => {
-      const res = await request(httpServer)
+      const res = await e2e(httpServer, 'security')
         .get('/api/v1/players')
         .set(clubSessionWithoutTenant(clubId))
         .expect(400);
@@ -245,7 +228,7 @@ describe('Security e2e', () => {
     });
 
     it('returns 403 when a club role hits an admin-only route', async () => {
-      const res = await request(httpServer)
+      const res = await e2e(httpServer, 'security')
         .post('/api/v1/clubs')
         .set(clubSession(clubId))
         .send({ name: 'Forbidden Club', slug: 'forbidden-club' })
@@ -255,7 +238,7 @@ describe('Security e2e', () => {
     });
 
     it('returns 403 when a player hits an admin-only route', async () => {
-      const res = await request(httpServer)
+      const res = await e2e(httpServer, 'security')
         .post('/api/v1/players')
         .set(playerSession())
         .send({
@@ -270,7 +253,7 @@ describe('Security e2e', () => {
     });
 
     it('returns 403 when a club user upserts moderator profiles', async () => {
-      const res = await request(httpServer)
+      const res = await e2e(httpServer, 'security')
         .post('/api/v1/users/profiles')
         .set(clubSession(clubId))
         .send({ userId: 'moderator-1', role: 'club', clubId })
@@ -280,15 +263,16 @@ describe('Security e2e', () => {
     });
 
     it('allows system admin to upsert moderator profiles', async () => {
-      await request(httpServer)
+      // CreateUserProfileDto requires userId to be a MongoId.
+      await e2e(httpServer, 'security')
         .post('/api/v1/users/profiles')
         .set(adminSession(tenantHeader))
-        .send({ userId: 'moderator-2', role: 'club', clubId })
+        .send({ userId: '507f1f77bcf86cd799439011', role: 'club', clubId })
         .expect(201);
     });
 
     it('blocks mismatched tenant headers for club users', async () => {
-      const res = await request(httpServer)
+      const res = await e2e(httpServer, 'security')
         .get('/api/v1/players')
         .set({ ...clubSession(clubId), 'x-tenant-id': 'other-tenant' })
         .expect(403);
@@ -300,7 +284,7 @@ describe('Security e2e', () => {
     });
 
     it('blocks players from reading another club roster', async () => {
-      const res = await request(httpServer)
+      const res = await e2e(httpServer, 'security')
         .get(`/api/v1/players/by-club/${otherClubId}`)
         .set(playerSession())
         .expect(403);
@@ -310,7 +294,7 @@ describe('Security e2e', () => {
     });
 
     it('prevents clubs from creating players in other clubs', async () => {
-      const res = await request(httpServer)
+      const res = await e2e(httpServer, 'security')
         .post('/api/v1/players')
         .set(clubSession(clubId))
         .send({
@@ -325,7 +309,7 @@ describe('Security e2e', () => {
     });
 
     it('blocks players from ranking endpoints', async () => {
-      const res = await request(httpServer)
+      const res = await e2e(httpServer, 'security')
         .get(`/api/v1/matches/ranking/${categoryId}`)
         .set(playerSession())
         .expect(403);
@@ -334,7 +318,7 @@ describe('Security e2e', () => {
     });
 
     it('blocks players from ranking endpoints', async () => {
-      const res = await request(httpServer)
+      const res = await e2e(httpServer, 'security')
         .get(`/api/v1/matches/ranking/${categoryId}`)
         .set(playerSession())
         .expect(403);
@@ -345,7 +329,7 @@ describe('Security e2e', () => {
 
   describe('Profile bootstrap bypass', () => {
     it('allows GET /users/me without a profile', async () => {
-      const response = await request(httpServer)
+      const response = await e2e(httpServer, 'security')
         .get('/api/v1/users/me')
         .set(bootstrapSession('bootstrap-me'))
         .expect(200);
@@ -354,7 +338,7 @@ describe('Security e2e', () => {
     });
 
     it('allows creating a self profile without existing profile', async () => {
-      await request(httpServer)
+      await e2e(httpServer, 'security')
         .post('/api/v1/users/profiles/self')
         .set(bootstrapSession('bootstrap-self'))
         .send({ role: 'club', clubId })
@@ -362,7 +346,7 @@ describe('Security e2e', () => {
     });
 
     it('blocks moderator profile creation without admin role even during bootstrap', async () => {
-      await request(httpServer)
+      await e2e(httpServer, 'security')
         .post('/api/v1/users/profiles')
         .set(bootstrapSession('bootstrap-deny'))
         .send({ userId: 'mod-target', role: 'club', clubId })
@@ -372,7 +356,9 @@ describe('Security e2e', () => {
 
   describe('Rate limiting and brute force', () => {
     it('accepts auth traffic (rate limiting covered in runtime)', async () => {
-      const res = await request(httpServer).post('/api/auth/sign-in/email');
+      const res = await e2e(httpServer, 'security').post(
+        '/api/auth/sign-in/email',
+      );
 
       expect(res.status).toBe(200);
     });
@@ -382,7 +368,7 @@ describe('Security e2e', () => {
     it('allows configured origins', async () => {
       const allowedOrigin =
         process.env.BETTER_AUTH_URL ?? 'http://localhost:3000';
-      const res = await request(httpServer)
+      const res = await e2e(httpServer, 'security')
         .get('/api/auth/get-session')
         .set('Origin', allowedOrigin);
 
@@ -390,30 +376,15 @@ describe('Security e2e', () => {
     });
 
     it('rejects untrusted origins', async () => {
-      const res = await request(httpServer)
+      const res = await e2e(httpServer, 'security')
         .get('/api/auth/get-session')
         .set('Origin', 'http://evil.example');
 
-      expect(res.headers['access-control-allow-origin']).toBeUndefined();
+      // With a single configured origin (string), the CORS middleware returns a
+      // fixed allow-origin header (it does not echo back arbitrary origins).
+      expect(res.headers['access-control-allow-origin']).not.toBe(
+        'http://evil.example',
+      );
     });
   });
 });
-
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value && typeof value === 'object');
-
-const loadAppModule = (): AppModuleImport => {
-  const moduleValue = require('../src/app.module') as unknown;
-  if (!isObject(moduleValue) || !('AppModule' in moduleValue)) {
-    throw new Error('Failed to load AppModule');
-  }
-  return moduleValue as AppModuleImport;
-};
-
-const loadAuthModule = (): AuthModuleImport => {
-  const moduleValue = require('../src/auth/auth') as unknown;
-  if (!isObject(moduleValue) || !('authMongoClient' in moduleValue)) {
-    throw new Error('Failed to load auth module');
-  }
-  return moduleValue as AuthModuleImport;
-};

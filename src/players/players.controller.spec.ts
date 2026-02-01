@@ -42,9 +42,7 @@ describe('PlayersController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [PlayersController],
-      providers: [
-        { provide: PlayersService, useValue: mockPlayersService },
-      ],
+      providers: [{ provide: PlayersService, useValue: mockPlayersService }],
     }).compile();
 
     controller = module.get<PlayersController>(PlayersController);
@@ -104,7 +102,10 @@ describe('PlayersController', () => {
 
     it('should throw ForbiddenException when context missing', async () => {
       await expect(
-        controller.getAllPlayers(createMockRequest(null), { page: 1, limit: 10 }),
+        controller.getAllPlayers(createMockRequest(null), {
+          page: 1,
+          limit: 10,
+        }),
       ).rejects.toThrow(ForbiddenException);
     });
   });
@@ -128,7 +129,10 @@ describe('PlayersController', () => {
 
     it('should throw ForbiddenException when context missing', async () => {
       await expect(
-        controller.searchPlayers(createMockRequest(null), { page: 1, limit: 10 }),
+        controller.searchPlayers(createMockRequest(null), {
+          page: 1,
+          limit: 10,
+        }),
       ).rejects.toThrow(ForbiddenException);
     });
   });
@@ -152,7 +156,10 @@ describe('PlayersController', () => {
 
     it('should throw ForbiddenException when context missing', async () => {
       await expect(
-        controller.getPlayerByEmail(createMockRequest(null), 'test@example.com'),
+        controller.getPlayerByEmail(
+          createMockRequest(null),
+          'test@example.com',
+        ),
       ).rejects.toThrow(ForbiddenException);
     });
   });
@@ -237,7 +244,7 @@ describe('PlayersController', () => {
   });
 
   describe('updatePlayer', () => {
-    const updateDto = { name: 'Updated Name' };
+    const updateDto = { name: 'Updated Name', phone: '11999999999' };
 
     it('should update player', async () => {
       const mockPlayer = { _id: 'player-1', ...updateDto };

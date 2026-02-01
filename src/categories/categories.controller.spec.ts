@@ -82,11 +82,11 @@ describe('CategoriesController', () => {
 
   describe('getCategory', () => {
     it('should return categories array', async () => {
-      const mockCategories = [
-        { category: 'Cat1' },
-        { category: 'Cat2' },
-      ];
-      service.getCategory.mockResolvedValue({ items: mockCategories, total: 2 });
+      const mockCategories = [{ category: 'Cat1' }, { category: 'Cat2' }];
+      service.getCategory.mockResolvedValue({
+        items: mockCategories,
+        total: 2,
+      });
 
       const result = await controller.getCategory(
         createMockRequest(mockAccessContext),
@@ -126,10 +126,10 @@ describe('CategoriesController', () => {
       });
 
       expect(result).toEqual(mockCategories);
-      expect(service.getCategoriesByPlayer).toHaveBeenCalledWith(
-        'player-1',
-        { page: 1, limit: 10 },
-      );
+      expect(service.getCategoriesByPlayer).toHaveBeenCalledWith('player-1', {
+        page: 1,
+        limit: 10,
+      });
     });
   });
 

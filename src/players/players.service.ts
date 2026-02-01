@@ -51,6 +51,9 @@ export class PlayersService {
     const playerCreated = new this.playerModel({
       ...createPlayerDto,
       clubId: scopedClubId,
+      // Make tenant explicit on writes; avoids relying on AsyncLocalStorage
+      // propagation into Mongoose hooks during tests.
+      tenant: context.tenantId ?? undefined,
     });
     const savedPlayer = await playerCreated.save();
     this.auditService.audit(AuditEvent.PLAYER_CREATED, context, {

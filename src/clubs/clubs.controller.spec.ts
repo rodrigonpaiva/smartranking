@@ -46,9 +46,7 @@ describe('ClubsController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ClubsController],
-      providers: [
-        { provide: ClubsService, useValue: mockClubsService },
-      ],
+      providers: [{ provide: ClubsService, useValue: mockClubsService }],
     }).compile();
 
     controller = module.get<ClubsController>(ClubsController);
@@ -144,7 +142,10 @@ describe('ClubsController', () => {
       const result = await controller.getPublicClubs({ page: 1, limit: 10 });
 
       expect(result).toEqual(mockResult);
-      expect(service.getPublicClubs).toHaveBeenCalledWith({ page: 1, limit: 10 });
+      expect(service.getPublicClubs).toHaveBeenCalledWith({
+        page: 1,
+        limit: 10,
+      });
     });
   });
 

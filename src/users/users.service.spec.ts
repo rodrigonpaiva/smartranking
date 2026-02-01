@@ -1,16 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
-import {
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { UserProfilesService } from './users.service';
 import { AuditService } from '../audit/audit.service';
 import { Roles } from '../auth/roles';
 import type { AccessContext } from '../auth/access-context.types';
 
 const createMockUserProfileModel = () => {
-  const MockModel = function (data: unknown) {
+  const MockModel = function (data: Record<string, unknown> = {}) {
     return {
       ...data,
       save: jest.fn().mockResolvedValue(data),
@@ -168,7 +165,9 @@ describe('UserProfilesService', () => {
         exec: jest.fn().mockResolvedValue({ _id: 'club-1' }),
       });
       playerModel.findById.mockReturnValue({
-        exec: jest.fn().mockResolvedValue({ _id: 'player-1', clubId: 'club-1' }),
+        exec: jest
+          .fn()
+          .mockResolvedValue({ _id: 'player-1', clubId: 'club-1' }),
       });
       userProfileModel.findOneAndUpdate.mockResolvedValue(dto);
 
@@ -222,7 +221,9 @@ describe('UserProfilesService', () => {
         exec: jest.fn().mockResolvedValue({ _id: 'club-1' }),
       });
       playerModel.findById.mockReturnValue({
-        exec: jest.fn().mockResolvedValue({ _id: 'player-1', clubId: 'other-club' }),
+        exec: jest
+          .fn()
+          .mockResolvedValue({ _id: 'player-1', clubId: 'other-club' }),
       });
 
       await expect(service.upsertProfile(dto, adminContext)).rejects.toThrow(
@@ -240,9 +241,16 @@ describe('UserProfilesService', () => {
       clubModel.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue({ _id: 'club-1' }),
       });
-      userProfileModel.findOneAndUpdate.mockResolvedValue({ userId: 'user-1', ...dto });
+      userProfileModel.findOneAndUpdate.mockResolvedValue({
+        userId: 'user-1',
+        ...dto,
+      });
 
-      const result = await service.upsertSelfProfile('user-1', dto, clubContext);
+      const result = await service.upsertSelfProfile(
+        'user-1',
+        dto,
+        clubContext,
+      );
 
       expect(result).toBeDefined();
       expect(mockAuditService.audit).toHaveBeenCalled();
@@ -283,11 +291,20 @@ describe('UserProfilesService', () => {
         exec: jest.fn().mockResolvedValue({ _id: 'club-1' }),
       });
       playerModel.findById.mockReturnValue({
-        exec: jest.fn().mockResolvedValue({ _id: 'player-1', clubId: 'club-1' }),
+        exec: jest
+          .fn()
+          .mockResolvedValue({ _id: 'player-1', clubId: 'club-1' }),
       });
-      userProfileModel.findOneAndUpdate.mockResolvedValue({ userId: 'user-1', ...dto });
+      userProfileModel.findOneAndUpdate.mockResolvedValue({
+        userId: 'user-1',
+        ...dto,
+      });
 
-      const result = await service.upsertSelfProfile('user-1', dto, clubContext);
+      const result = await service.upsertSelfProfile(
+        'user-1',
+        dto,
+        clubContext,
+      );
 
       expect(result).toBeDefined();
     });

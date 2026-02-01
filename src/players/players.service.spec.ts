@@ -11,7 +11,7 @@ import { Roles } from '../auth/roles';
 import type { AccessContext } from '../auth/access-context.types';
 
 const createMockPlayerModel = () => {
-  const MockModel = function (data: unknown) {
+  const MockModel = function (data: Record<string, unknown> = {}) {
     return {
       ...data,
       _id: 'player-id',
@@ -101,9 +101,10 @@ describe('PlayersService', () => {
 
     it('should throw BadRequestException when clubId missing for admin', async () => {
       const dtoWithoutClub = { ...createDto, clubId: undefined };
+      const invalidDto = dtoWithoutClub as unknown as typeof createDto;
 
       await expect(
-        service.createPlayer(dtoWithoutClub as typeof createDto, adminContext),
+        service.createPlayer(invalidDto, adminContext),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -112,9 +113,9 @@ describe('PlayersService', () => {
         exec: jest.fn().mockResolvedValue(null),
       });
 
-      await expect(service.createPlayer(createDto, adminContext)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.createPlayer(createDto, adminContext),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('should throw BadRequestException when email already exists', async () => {
@@ -125,9 +126,9 @@ describe('PlayersService', () => {
         exec: jest.fn().mockResolvedValue({ email: 'test@example.com' }),
       });
 
-      await expect(service.createPlayer(createDto, adminContext)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.createPlayer(createDto, adminContext),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('should use context clubId for club users', async () => {
@@ -263,10 +264,14 @@ describe('PlayersService', () => {
       });
       playerModel.countDocuments.mockResolvedValue(0);
 
-      const result = await service.getPlayersByClubId('any-club', adminContext, {
-        page: 1,
-        limit: 10,
-      });
+      const result = await service.getPlayersByClubId(
+        'any-club',
+        adminContext,
+        {
+          page: 1,
+          limit: 10,
+        },
+      );
 
       expect(result).toBeDefined();
     });
@@ -301,7 +306,10 @@ describe('PlayersService', () => {
       });
       playerModel.countDocuments.mockResolvedValue(0);
 
-      await service.searchPlayers({ page: 1, limit: 10, q: 'john' }, adminContext);
+      await service.searchPlayers(
+        { page: 1, limit: 10, q: 'john' },
+        adminContext,
+      );
 
       expect(playerModel.find).toHaveBeenCalled();
     });
@@ -309,7 +317,11 @@ describe('PlayersService', () => {
 
   describe('updatePlayer', () => {
     it('should update player successfully', async () => {
-      const mockPlayer = { _id: 'player-1', name: 'Old Name', clubId: 'club-1' };
+      const mockPlayer = {
+        _id: 'player-1',
+        name: 'Old Name',
+        clubId: 'club-1',
+      };
       playerModel.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(mockPlayer),
       });
@@ -319,7 +331,7 @@ describe('PlayersService', () => {
 
       const result = await service.updatePlayer(
         'player-1',
-        { name: 'New Name' },
+        { name: 'New Name', phone: '11999999999' },
         clubContext,
       );
 
@@ -333,7 +345,11 @@ describe('PlayersService', () => {
       });
 
       await expect(
-        service.updatePlayer('non-existent', { name: 'Test' }, clubContext),
+        service.updatePlayer(
+          'non-existent',
+          { name: 'Test', phone: '11999999999' },
+          clubContext,
+        ),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -344,7 +360,11 @@ describe('PlayersService', () => {
       });
 
       await expect(
-        service.updatePlayer('player-1', { name: 'Test' }, clubContext),
+        service.updatePlayer(
+          'player-1',
+          { name: 'Test', phone: '11999999999' },
+          clubContext,
+        ),
       ).rejects.toThrow(ForbiddenException);
     });
   });
@@ -379,7 +399,10 @@ describe('PlayersService', () => {
         exec: jest.fn().mockResolvedValue(mockPlayer),
       });
 
-      const result = await service.getPlayerByEmail('test@test.com', clubContext);
+      const result = await service.getPlayerByEmail(
+        'test@test.com',
+        clubContext,
+      );
 
       expect(result).toEqual(mockPlayer);
     });

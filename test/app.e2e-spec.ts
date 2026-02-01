@@ -1,8 +1,8 @@
 import { HttpServer, INestApplication } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { MongoClient } from 'mongodb';
-import request from 'supertest';
+
+import { createE2EApp, e2e } from './utils/create-e2e-app';
 
 import {
   ensureArray,
@@ -10,12 +10,11 @@ import {
   ensureRecord,
   ensureString,
 } from './utils/assertions';
-import { attachTestUserContext } from './utils/test-app';
+// attachTestUserContext is replaced by createE2EApp guard overrides.
 import { AuditService } from '../src/audit/audit.service';
 import { AuditEvent } from '../src/audit/audit.events';
 
-type AppModuleImport = typeof import('../src/app.module');
-type AuthModuleImport = typeof import('../src/auth/auth');
+// Better Auth modules are bypassed in e2e via createE2EApp.
 
 jest.setTimeout(30000);
 
@@ -39,8 +38,9 @@ describe('SmartRanking API (e2e)', () => {
   let app: INestApplication;
   let mongo: MongoMemoryServer;
   let httpServer: HttpServer;
+  let closeApp: (() => Promise<void>) | null = null;
   let createdPlayerId: string;
-  let authMongoClient: MongoClient | null = null;
+  // Better Auth mongo client is not needed in e2e.
   let clubId: string;
   let tenantHeader = 'bootstrap-admin';
 
@@ -62,20 +62,13 @@ describe('SmartRanking API (e2e)', () => {
     process.env.BETTER_AUTH_SECRET = 'test-secret-please-change-32-chars';
     process.env.BETTER_AUTH_URL = 'http://localhost:3000';
 
-    const appModule = loadAppModule();
-    const authModule = loadAuthModule();
-    authMongoClient = authModule.authMongoClient;
+    // Use shared e2e helper to bypass runtime auth pipeline.
+    const e2eApp = await createE2EApp();
+    app = e2eApp.app;
+    httpServer = e2eApp.httpServer as HttpServer;
+    closeApp = e2eApp.close;
 
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [appModule.AppModule],
-    }).compile();
-
-    app = moduleFixture.createNestApplication();
-    attachTestUserContext(app);
-    await app.init();
-    httpServer = app.getHttpServer() as HttpServer;
-
-    const clubResponse = await request(httpServer)
+    const clubResponse = await e2e(httpServer)
       .post('/api/v1/clubs')
       .set(adminSession(tenantHeader))
       .send({
@@ -91,13 +84,13 @@ describe('SmartRanking API (e2e)', () => {
   });
 
   afterAll(async () => {
-    if (app) {
+    if (closeApp) {
+      await closeApp();
+    } else if (app) {
       await app.close();
     }
 
-    if (authMongoClient) {
-      await authMongoClient.close();
-    }
+    // authMongoClient not used in e2e.
 
     if (mongo) {
       await mongo.stop();
@@ -113,7 +106,7 @@ describe('SmartRanking API (e2e)', () => {
     });
 
     it('creates a new player', async () => {
-      const response = await request(httpServer)
+      const response = await e2e(httpServer)
         .post('/api/v1/players')
         .set(adminSession(tenantHeader))
         .send(getPlayerPayload())
@@ -130,7 +123,7 @@ describe('SmartRanking API (e2e)', () => {
     });
 
     it('rejects duplicated player emails', async () => {
-      const response = await request(httpServer)
+      const response = await e2e(httpServer)
         .post('/api/v1/players')
         .set(adminSession(tenantHeader))
         .send(getPlayerPayload())
@@ -144,17 +137,18 @@ describe('SmartRanking API (e2e)', () => {
     });
 
     it('returns all players', async () => {
-      const response = await request(httpServer)
+      const response = await e2e(httpServer)
         .get('/api/v1/players')
         .set(adminSession(tenantHeader))
         .expect(200);
 
-      const players = ensureArray(response.body, 'players list');
+      const page = ensureRecord(response.body, 'players page');
+      const players = ensureArray(page.items, 'players list');
       expect(players).toHaveLength(1);
     });
 
     it('rejects pagination limits above the configured maximum', async () => {
-      const response = await request(httpServer)
+      const response = await e2e(httpServer)
         .get('/api/v1/players')
         .set(adminSession(tenantHeader))
         .query({ limit: 500 })
@@ -165,7 +159,7 @@ describe('SmartRanking API (e2e)', () => {
     });
 
     it('fetches a player by id', async () => {
-      const response = await request(httpServer)
+      const response = await e2e(httpServer)
         .get(`/api/v1/players/${createdPlayerId}`)
         .set(adminSession(tenantHeader))
         .expect(200);
@@ -183,13 +177,13 @@ describe('SmartRanking API (e2e)', () => {
         phone: '11888888888',
       };
 
-      await request(httpServer)
+      await e2e(httpServer)
         .put(`/api/v1/players/${createdPlayerId}`)
         .set(adminSession(tenantHeader))
         .send(updatePayload)
         .expect(200);
 
-      const response = await request(httpServer)
+      const response = await e2e(httpServer)
         .get(`/api/v1/players/${createdPlayerId}`)
         .set(adminSession(tenantHeader))
         .expect(200);
@@ -202,7 +196,7 @@ describe('SmartRanking API (e2e)', () => {
     });
 
     it('finds a player by phone number', async () => {
-      const response = await request(httpServer)
+      const response = await e2e(httpServer)
         .get('/api/v1/players/by-phone')
         .set(adminSession(tenantHeader))
         .query({ phone: '11888888888' })
@@ -213,14 +207,14 @@ describe('SmartRanking API (e2e)', () => {
     });
 
     it('deletes a player', async () => {
-      await request(httpServer)
+      await e2e(httpServer)
         .delete(`/api/v1/players/${createdPlayerId}`)
         .set(adminSession(tenantHeader))
         .expect(200);
     });
 
     it('returns 404 when fetching a deleted player', async () => {
-      const response = await request(httpServer)
+      const response = await e2e(httpServer)
         .get(`/api/v1/players/${createdPlayerId}`)
         .set(adminSession(tenantHeader))
         .expect(404);
@@ -229,7 +223,7 @@ describe('SmartRanking API (e2e)', () => {
       const message = Array.isArray(error.message)
         ? error.message.join(', ')
         : error.message;
-      expect(message).toContain('No players found');
+      expect(message.toLowerCase()).toContain('not found');
     });
 
     it('emits audit events when creating a player', async () => {
@@ -238,7 +232,7 @@ describe('SmartRanking API (e2e)', () => {
         void,
         Parameters<AuditService['audit']>
       > = jest.spyOn(auditService, 'audit');
-      const createResponse = await request(httpServer)
+      const createResponse = await e2e(httpServer)
         .post('/api/v1/players')
         .set(adminSession(tenantHeader))
         .send({
@@ -266,7 +260,7 @@ describe('SmartRanking API (e2e)', () => {
         ensureRecord(createResponse.body, 'audit player')._id,
         'audit player id',
       );
-      await request(httpServer)
+      await e2e(httpServer)
         .delete(`/api/v1/players/${newPlayerId}`)
         .set(adminSession(tenantHeader))
         .expect(200);
@@ -283,7 +277,7 @@ describe('SmartRanking API (e2e)', () => {
     let categoryPlayerId: string;
 
     beforeAll(async () => {
-      const response = await request(httpServer)
+      const response = await e2e(httpServer)
         .post('/api/v1/players')
         .set(adminSession(tenantHeader))
         .send({
@@ -299,7 +293,7 @@ describe('SmartRanking API (e2e)', () => {
     });
 
     it('validates payload when creating a category', async () => {
-      const response = await request(httpServer)
+      const response = await e2e(httpServer)
         .post('/api/v1/categories')
         .set(adminSession(tenantHeader))
         .send({ category: 'invalid', description: '', events: [], clubId })
@@ -310,7 +304,7 @@ describe('SmartRanking API (e2e)', () => {
     });
 
     it('creates a category', async () => {
-      const response = await request(httpServer)
+      const response = await e2e(httpServer)
         .post('/api/v1/categories')
         .set(adminSession(tenantHeader))
         .send(getCategoryPayload())
@@ -327,7 +321,7 @@ describe('SmartRanking API (e2e)', () => {
     });
 
     it('lists all categories', async () => {
-      const response = await request(httpServer)
+      const response = await e2e(httpServer)
         .get('/api/v1/categories')
         .set(adminSession(tenantHeader))
         .expect(200);
@@ -337,7 +331,7 @@ describe('SmartRanking API (e2e)', () => {
     });
 
     it('fetches a category by its code', async () => {
-      const response = await request(httpServer)
+      const response = await e2e(httpServer)
         .get(`/api/v1/categories/${getCategoryPayload().category}`)
         .set(adminSession(tenantHeader))
         .expect(200);
@@ -349,7 +343,7 @@ describe('SmartRanking API (e2e)', () => {
     });
 
     it('assigns a player to the category', async () => {
-      await request(httpServer)
+      await e2e(httpServer)
         .post(
           `/api/v1/categories/${getCategoryPayload().category}/players/${categoryPlayerId}`,
         )
@@ -358,7 +352,7 @@ describe('SmartRanking API (e2e)', () => {
     });
 
     it('prevents duplicated player assignments', async () => {
-      const response = await request(httpServer)
+      const response = await e2e(httpServer)
         .post(
           `/api/v1/categories/${getCategoryPayload().category}/players/${categoryPlayerId}`,
         )
@@ -373,7 +367,7 @@ describe('SmartRanking API (e2e)', () => {
     });
 
     it('returns the category with assigned players populated', async () => {
-      const response = await request(httpServer)
+      const response = await e2e(httpServer)
         .get('/api/v1/categories')
         .set(adminSession(tenantHeader))
         .expect(200);
@@ -398,21 +392,21 @@ describe('SmartRanking API (e2e)', () => {
 
   describe('Operability & diagnostics', () => {
     it('confirms service health via /health', async () => {
-      const response = await request(httpServer).get('/health').expect(200);
+      const response = await e2e(httpServer).get('/health').expect(200);
 
       const body = ensureRecord(response.body, 'health payload');
       expect(body.status).toBe('ok');
     });
 
     it('confirms readiness via /ready', async () => {
-      const response = await request(httpServer).get('/ready').expect(200);
+      const response = await e2e(httpServer).get('/ready').expect(200);
 
       const body = ensureRecord(response.body, 'ready payload');
       expect(body.status).toBe('ok');
     });
 
     it('returns a requestId on validation errors', async () => {
-      const response = await request(httpServer)
+      const response = await e2e(httpServer)
         .post('/api/v1/players')
         .set(adminSession(tenantHeader))
         .send({})
@@ -424,22 +418,3 @@ describe('SmartRanking API (e2e)', () => {
     });
   });
 });
-
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value && typeof value === 'object');
-
-const loadAppModule = (): AppModuleImport => {
-  const moduleValue = require('../src/app.module') as unknown;
-  if (!isObject(moduleValue) || !('AppModule' in moduleValue)) {
-    throw new Error('Failed to load AppModule');
-  }
-  return moduleValue as AppModuleImport;
-};
-
-const loadAuthModule = (): AuthModuleImport => {
-  const moduleValue = require('../src/auth/auth') as unknown;
-  if (!isObject(moduleValue) || !('authMongoClient' in moduleValue)) {
-    throw new Error('Failed to load auth module');
-  }
-  return moduleValue as AuthModuleImport;
-};

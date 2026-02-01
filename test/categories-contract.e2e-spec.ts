@@ -1,15 +1,13 @@
 import { HttpServer, INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import request from 'supertest';
-import { AppModule } from '../src/app.module';
+
 import { tenancyContext } from '../src/tenancy/tenancy.context';
-import { attachTestUserContext } from './utils/test-app';
 import { Club } from '../src/clubs/interfaces/club.interface';
 import { Category } from '../src/categories/interfaces/category.interface';
 import { Player } from '../src/players/interfaces/players.interface';
+import { createE2EApp, e2e } from './utils/create-e2e-app';
 
 jest.mock('better-auth', () => ({
   betterAuth: (options: Record<string, unknown>) => ({
@@ -73,14 +71,9 @@ describe('Categories contract e2e', () => {
     process.env.BETTER_AUTH_SECRET = 'test-secret-please-change-32-chars';
     process.env.BETTER_AUTH_URL = 'http://localhost:3000';
 
-    const moduleRef = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleRef.createNestApplication();
-    attachTestUserContext(app);
-    await app.init();
-    httpServer = app.getHttpServer() as HttpServer;
+    const e2eApp = await createE2EApp();
+    app = e2eApp.app;
+    httpServer = e2eApp.httpServer as HttpServer;
 
     clubModel = app.get(getModelToken('Club'));
     categoryModel = app.get(getModelToken('Category'));
@@ -104,18 +97,24 @@ describe('Categories contract e2e', () => {
           slug: 'categories-contract-club',
           city: 'Lisbon',
           state: 'PT',
-        });
+        } as unknown as Parameters<typeof clubModel.create>[0]);
 
-        const player = await playerModel.create({
+        const playerModelUnsafe = playerModel as unknown as {
+          create: (doc: unknown) => Promise<{ _id: unknown }>;
+        };
+        const player = await playerModelUnsafe.create({
           tenant: tenantId,
           name: 'Contract Player',
           email: 'contract.player@example.com',
           phone: '11999999999',
           clubId: clubObjectId,
         });
-        playerId = player._id.toString();
+        playerId = String(player._id);
 
-        await categoryModel.create({
+        const categoryModelUnsafe = categoryModel as unknown as {
+          create: (doc: unknown) => Promise<unknown>;
+        };
+        await categoryModelUnsafe.create({
           tenant: tenantId,
           category: 'PADEL_MIXED',
           description: 'Padel Mixed',
@@ -139,7 +138,7 @@ describe('Categories contract e2e', () => {
     if (memoryUnavailable) {
       return;
     }
-    const response = await request(httpServer)
+    const response = await e2e(httpServer, 'categories-contract')
       .get('/api/v1/categories')
       .set({
         'x-test-user': 'categories-admin',
@@ -163,7 +162,7 @@ describe('Categories contract e2e', () => {
     if (memoryUnavailable) {
       return;
     }
-    const response = await request(httpServer)
+    const response = await e2e(httpServer, 'categories-contract')
       .get('/api/v1/categories/my')
       .set({
         'x-test-user': 'categories-player',

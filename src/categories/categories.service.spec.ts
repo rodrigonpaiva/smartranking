@@ -16,6 +16,7 @@ const mockCategoryModel = {
   find: jest.fn(),
   findById: jest.fn(),
   findOneAndUpdate: jest.fn(),
+  updateOne: jest.fn(),
   countDocuments: jest.fn(),
   exec: jest.fn(),
 };
@@ -33,7 +34,7 @@ const mockAuditService = {
 };
 
 const createMockCategoryModel = () => {
-  const MockModel = function (data: unknown) {
+  const MockModel = function (data: Record<string, unknown> = {}) {
     return {
       ...data,
       _id: 'category-id',
@@ -51,6 +52,7 @@ const createMockCategoryModel = () => {
     exec: jest.fn(),
   });
   MockModel.findOneAndUpdate = jest.fn().mockReturnValue({ exec: jest.fn() });
+  MockModel.updateOne = jest.fn().mockReturnValue({ exec: jest.fn() });
   MockModel.countDocuments = jest.fn();
   return MockModel;
 };
@@ -149,11 +151,11 @@ describe('CategoriesService', () => {
     it('should throw BadRequestException for admin without clubId', async () => {
       const dtoWithoutClub = { ...createDto, clubId: undefined };
 
+      // Cast through unknown to allow deliberately-invalid DTO shapes in tests.
+      const invalidDto = dtoWithoutClub as unknown as typeof createDto;
+
       await expect(
-        service.createCategory(
-          dtoWithoutClub as typeof createDto,
-          adminContext,
-        ),
+        service.createCategory(invalidDto, adminContext),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -327,7 +329,9 @@ describe('CategoriesService', () => {
         exec: jest.fn().mockResolvedValue(mockCategory),
       });
       categoryModel.findOneAndUpdate.mockReturnValue({
-        exec: jest.fn().mockResolvedValue({ ...mockCategory, description: 'Updated' }),
+        exec: jest
+          .fn()
+          .mockResolvedValue({ ...mockCategory, description: 'Updated' }),
       });
 
       const result = await service.updateCategory(
@@ -346,7 +350,11 @@ describe('CategoriesService', () => {
       });
 
       await expect(
-        service.updateCategory('NonExistent', { description: 'Test' }, clubContext),
+        service.updateCategory(
+          'NonExistent',
+          { description: 'Test' },
+          clubContext,
+        ),
       ).rejects.toThrow(NotFoundException);
     });
   });

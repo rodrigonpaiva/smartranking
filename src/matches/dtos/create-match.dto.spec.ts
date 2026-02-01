@@ -203,7 +203,12 @@ describe('CreateMatchDto', () => {
     });
 
     it('should pass with valid decidingSetType', async () => {
-      const types = ['STANDARD', 'ADVANTAGE', 'SUPER_TIEBREAK_7', 'SUPER_TIEBREAK_10'];
+      const types = [
+        'STANDARD',
+        'ADVANTAGE',
+        'SUPER_TIEBREAK_7',
+        'SUPER_TIEBREAK_10',
+      ];
       for (const type of types) {
         const dto = plainToInstance(CreateMatchDto, {
           ...validDto,

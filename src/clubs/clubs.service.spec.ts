@@ -12,7 +12,7 @@ import type { AccessContext } from '../auth/access-context.types';
 import { TenancyService } from '../tenancy/tenancy.service';
 
 const createMockClubModel = () => {
-  const MockModel = function (data: unknown) {
+  const MockModel = function (data: Record<string, unknown> = {}) {
     return {
       ...data,
       _id: 'club-id',

@@ -142,9 +142,12 @@ describe('AuditService', () => {
 
       service.audit(AuditEvent.PLAYER_DELETED, mockAccessContext, {});
 
-      const callArgs = loggerService.log.mock.calls[0][1];
-      expect(callArgs.timestamp).toBeDefined();
-      expect(new Date(callArgs.timestamp).getTime()).toBeGreaterThanOrEqual(
+      const callArgs = loggerService.log.mock.calls[0]?.[1] as unknown as {
+        timestamp?: unknown;
+      };
+      expect(callArgs?.timestamp).toBeDefined();
+      const callTimestamp = String(callArgs.timestamp);
+      expect(new Date(callTimestamp).getTime()).toBeGreaterThanOrEqual(
         new Date(beforeTimestamp).getTime(),
       );
     });

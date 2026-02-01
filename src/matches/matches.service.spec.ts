@@ -13,7 +13,7 @@ import { Roles } from '../auth/roles';
 import type { AccessContext } from '../auth/access-context.types';
 
 const createMockMatchModel = () => {
-  const MockModel = function (data: unknown) {
+  const MockModel = function (data: Record<string, unknown> = {}) {
     return {
       ...data,
       _id: 'match-id',
@@ -116,13 +116,20 @@ describe('MatchesService', () => {
       format: 'SINGLES' as const,
       bestOf: 3,
       decidingSetType: 'STANDARD' as const,
-      teams: [
-        { players: ['player-1'] },
-        { players: ['player-2'] },
-      ],
+      teams: [{ players: ['player-1'] }, { players: ['player-2'] }],
       sets: [
-        { games: [{ teamIndex: 0, score: 6 }, { teamIndex: 1, score: 4 }] },
-        { games: [{ teamIndex: 0, score: 6 }, { teamIndex: 1, score: 3 }] },
+        {
+          games: [
+            { teamIndex: 0, score: 6 },
+            { teamIndex: 1, score: 4 },
+          ],
+        },
+        {
+          games: [
+            { teamIndex: 0, score: 6 },
+            { teamIndex: 1, score: 3 },
+          ],
+        },
       ],
     };
 
@@ -154,7 +161,9 @@ describe('MatchesService', () => {
         exec: jest.fn().mockResolvedValue({ _id: 'club-1' }),
       });
       categoryModel.findById.mockReturnValue({
-        exec: jest.fn().mockResolvedValue({ _id: 'category-1', clubId: 'club-1' }),
+        exec: jest
+          .fn()
+          .mockResolvedValue({ _id: 'category-1', clubId: 'club-1' }),
       });
 
       const invalidDto = { ...baseMatchDto, bestOf: 2 };
@@ -169,7 +178,9 @@ describe('MatchesService', () => {
         exec: jest.fn().mockResolvedValue({ _id: 'club-1' }),
       });
       categoryModel.findById.mockReturnValue({
-        exec: jest.fn().mockResolvedValue({ _id: 'category-1', clubId: 'club-1' }),
+        exec: jest
+          .fn()
+          .mockResolvedValue({ _id: 'category-1', clubId: 'club-1' }),
       });
 
       const invalidDto = {
@@ -187,15 +198,14 @@ describe('MatchesService', () => {
         exec: jest.fn().mockResolvedValue({ _id: 'club-1' }),
       });
       categoryModel.findById.mockReturnValue({
-        exec: jest.fn().mockResolvedValue({ _id: 'category-1', clubId: 'club-1' }),
+        exec: jest
+          .fn()
+          .mockResolvedValue({ _id: 'category-1', clubId: 'club-1' }),
       });
 
       const invalidDto = {
         ...baseMatchDto,
-        teams: [
-          { players: ['player-1'] },
-          { players: ['player-1'] },
-        ],
+        teams: [{ players: ['player-1'] }, { players: ['player-1'] }],
       };
 
       await expect(
@@ -208,7 +218,9 @@ describe('MatchesService', () => {
         exec: jest.fn().mockResolvedValue({ _id: 'club-1' }),
       });
       categoryModel.findById.mockReturnValue({
-        exec: jest.fn().mockResolvedValue({ _id: 'category-1', clubId: 'club-1' }),
+        exec: jest
+          .fn()
+          .mockResolvedValue({ _id: 'category-1', clubId: 'club-1' }),
       });
 
       const dtoWithMismatch = {
@@ -222,7 +234,9 @@ describe('MatchesService', () => {
         exec: jest.fn().mockResolvedValue({ _id: 'club-different' }),
       });
       categoryModel.findById.mockReturnValue({
-        exec: jest.fn().mockResolvedValue({ _id: 'category-1', clubId: 'club-1' }),
+        exec: jest
+          .fn()
+          .mockResolvedValue({ _id: 'category-1', clubId: 'club-1' }),
       });
 
       await expect(
@@ -278,7 +292,9 @@ describe('MatchesService', () => {
 
     it('should filter by categoryId when provided', async () => {
       categoryModel.findById.mockReturnValue({
-        exec: jest.fn().mockResolvedValue({ _id: 'category-1', clubId: 'club-1' }),
+        exec: jest
+          .fn()
+          .mockResolvedValue({ _id: 'category-1', clubId: 'club-1' }),
       });
       matchModel.find.mockReturnValue({
         sort: jest.fn().mockReturnThis(),
@@ -325,7 +341,9 @@ describe('MatchesService', () => {
   describe('getMatchesByCategory', () => {
     it('should return matches for category', async () => {
       categoryModel.findById.mockReturnValue({
-        exec: jest.fn().mockResolvedValue({ _id: 'category-1', clubId: 'club-1' }),
+        exec: jest
+          .fn()
+          .mockResolvedValue({ _id: 'category-1', clubId: 'club-1' }),
       });
       matchModel.find.mockReturnValue({
         sort: jest.fn().mockReturnThis(),
@@ -360,7 +378,9 @@ describe('MatchesService', () => {
 
     it('should filter by playerId when provided', async () => {
       categoryModel.findById.mockReturnValue({
-        exec: jest.fn().mockResolvedValue({ _id: 'category-1', clubId: 'club-1' }),
+        exec: jest
+          .fn()
+          .mockResolvedValue({ _id: 'category-1', clubId: 'club-1' }),
       });
       matchModel.find.mockReturnValue({
         sort: jest.fn().mockReturnThis(),
@@ -422,7 +442,9 @@ describe('MatchesService', () => {
   describe('getRankingByCategory', () => {
     it('should return empty ranking when no matches', async () => {
       categoryModel.findById.mockReturnValue({
-        exec: jest.fn().mockResolvedValue({ _id: 'category-1', clubId: 'club-1' }),
+        exec: jest
+          .fn()
+          .mockResolvedValue({ _id: 'category-1', clubId: 'club-1' }),
       });
       matchModel.find.mockReturnValue({
         sort: jest.fn().mockReturnThis(),
@@ -484,16 +506,23 @@ describe('MatchesService', () => {
             { playerId: 'player-1', result: 'WIN' },
             { playerId: 'player-2', result: 'LOSS' },
           ],
-          teams: [
-            { players: ['player-1'] },
-            { players: ['player-2'] },
-          ],
+          teams: [{ players: ['player-1'] }, { players: ['player-2'] }],
           playedAt: new Date(),
         },
       ];
       const mockPlayers = [
-        { _id: 'player-1', name: 'Player 1', email: 'p1@test.com', clubId: 'club-1' },
-        { _id: 'player-2', name: 'Player 2', email: 'p2@test.com', clubId: 'club-1' },
+        {
+          _id: 'player-1',
+          name: 'Player 1',
+          email: 'p1@test.com',
+          clubId: 'club-1',
+        },
+        {
+          _id: 'player-2',
+          name: 'Player 2',
+          email: 'p2@test.com',
+          clubId: 'club-1',
+        },
       ];
 
       categoryModel.findById.mockReturnValue({

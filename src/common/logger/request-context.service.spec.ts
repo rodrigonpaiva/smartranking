@@ -1,5 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { RequestContextService, RequestContextStore } from './request-context.service';
+import {
+  RequestContextService,
+  RequestContextStore,
+} from './request-context.service';
 import { Roles } from '../../auth/roles';
 import type { AccessContext } from '../../auth/access-context.types';
 

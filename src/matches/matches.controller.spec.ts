@@ -46,9 +46,7 @@ describe('MatchesController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [MatchesController],
-      providers: [
-        { provide: MatchesService, useValue: mockMatchesService },
-      ],
+      providers: [{ provide: MatchesService, useValue: mockMatchesService }],
     }).compile();
 
     controller = module.get<MatchesController>(MatchesController);
@@ -64,13 +62,20 @@ describe('MatchesController', () => {
       format: 'SINGLES' as const,
       bestOf: 3,
       decidingSetType: 'STANDARD' as const,
-      teams: [
-        { players: ['player-1'] },
-        { players: ['player-2'] },
-      ],
+      teams: [{ players: ['player-1'] }, { players: ['player-2'] }],
       sets: [
-        { games: [{ teamIndex: 0, score: 6 }, { teamIndex: 1, score: 4 }] },
-        { games: [{ teamIndex: 0, score: 6 }, { teamIndex: 1, score: 3 }] },
+        {
+          games: [
+            { teamIndex: 0, score: 6 },
+            { teamIndex: 1, score: 4 },
+          ],
+        },
+        {
+          games: [
+            { teamIndex: 0, score: 6 },
+            { teamIndex: 1, score: 3 },
+          ],
+        },
       ],
     };
 
@@ -195,11 +200,10 @@ describe('MatchesController', () => {
 
     it('should throw ForbiddenException when context missing', async () => {
       await expect(
-        controller.getMatchesByCategory(
-          'category-1',
-          createMockRequest(null),
-          { page: 1, limit: 10 },
-        ),
+        controller.getMatchesByCategory('category-1', createMockRequest(null), {
+          page: 1,
+          limit: 10,
+        }),
       ).rejects.toThrow(ForbiddenException);
     });
   });
@@ -233,11 +237,10 @@ describe('MatchesController', () => {
 
     it('should throw ForbiddenException when context missing', async () => {
       await expect(
-        controller.getRankingByCategory(
-          'category-1',
-          createMockRequest(null),
-          { page: 1, limit: 10 },
-        ),
+        controller.getRankingByCategory('category-1', createMockRequest(null), {
+          page: 1,
+          limit: 10,
+        }),
       ).rejects.toThrow(ForbiddenException);
     });
   });

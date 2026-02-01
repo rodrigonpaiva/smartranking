@@ -1,11 +1,8 @@
 import { HttpServer, INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import request from 'supertest';
-import { ensureArray, ensureRecord, ensureString } from './utils/assertions';
-import { attachTestUserContext } from './utils/test-app';
 
-type AppModuleImport = typeof import('../src/app.module');
+import { ensureArray, ensureRecord, ensureString } from './utils/assertions';
+import { createE2EApp, e2e } from './utils/create-e2e-app';
 
 jest.mock('better-auth', () => ({
   betterAuth: (options: Record<string, unknown>) => ({
@@ -41,15 +38,9 @@ describe('Tenancy e2e', () => {
     process.env.BETTER_AUTH_SECRET = 'test-secret-please-change-32-chars';
     process.env.BETTER_AUTH_URL = 'http://localhost:3000';
 
-    const appModule = loadAppModule();
-    const moduleRef = await Test.createTestingModule({
-      imports: [appModule.AppModule],
-    }).compile();
-
-    app = moduleRef.createNestApplication();
-    attachTestUserContext(app);
-    await app.init();
-    httpServer = app.getHttpServer() as HttpServer;
+    const e2eApp = await createE2EApp();
+    app = e2eApp.app;
+    httpServer = e2eApp.httpServer as HttpServer;
   });
 
   afterAll(async () => {
@@ -65,7 +56,7 @@ describe('Tenancy e2e', () => {
     const tenantA = 'club-a';
     const tenantB = 'club-b';
 
-    const clubAResponse = await request(httpServer)
+    const clubAResponse = await e2e(httpServer, 'tenancy')
       .post('/api/v1/clubs')
       .set(adminSession(tenantA))
       .send({ name: 'Club A', slug: 'club-a' })
@@ -73,7 +64,7 @@ describe('Tenancy e2e', () => {
     const clubABody = ensureRecord(clubAResponse.body, 'club A response');
     const clubAId = ensureString(clubABody._id, 'club A id');
 
-    const clubBResponse = await request(httpServer)
+    const clubBResponse = await e2e(httpServer, 'tenancy')
       .post('/api/v1/clubs')
       .set(adminSession(tenantB))
       .send({ name: 'Club B', slug: 'club-b' })
@@ -81,20 +72,20 @@ describe('Tenancy e2e', () => {
     const clubBBody = ensureRecord(clubBResponse.body, 'club B response');
     const clubBId = ensureString(clubBBody._id, 'club B id');
 
-    await request(httpServer)
+    await e2e(httpServer, 'tenancy')
       .post('/api/v1/players')
-      .set(adminSession(tenantA))
+      .set(adminSession(clubAId))
       .send({
         email: 'a@example.com',
         name: 'Rider A',
-        phone: '111',
+        phone: '1111111111',
         clubId: clubAId,
       })
       .expect(201);
 
-    await request(httpServer)
+    await e2e(httpServer, 'tenancy')
       .post('/api/v1/categories')
-      .set(adminSession(tenantA))
+      .set(adminSession(clubAId))
       .send({
         category: 'A',
         description: 'Category A',
@@ -103,31 +94,41 @@ describe('Tenancy e2e', () => {
       })
       .expect(201);
 
-    const clubsTenantBResponse = await request(httpServer)
+    const clubsTenantBResponse = await e2e(httpServer, 'tenancy')
       .get('/api/v1/clubs')
-      .set(adminSession(tenantB))
+      .set(adminSession(clubBId))
       .expect(200);
-    const clubsTenantB = ensureArray(
+    const clubsTenantBPage = ensureRecord(
       clubsTenantBResponse.body,
+      'clubs tenant B page',
+    );
+    const clubsTenantB = ensureArray(
+      clubsTenantBPage.items,
       'clubs tenant B',
     ).map((item, index) => ensureRecord(item, `club ${index}`));
     expect(clubsTenantB).toHaveLength(1);
     expect(ensureString(clubsTenantB[0]._id, 'club id')).toBe(clubBId);
 
-    const playersTenantBResponse = await request(httpServer)
+    const playersTenantBResponse = await e2e(httpServer, 'tenancy')
       .get('/api/v1/players')
-      .set(adminSession(tenantB))
+      .set(adminSession(clubBId))
       .expect(200);
-    const playersTenantB = ensureArray(
+    const playersTenantBPage = ensureRecord(
       playersTenantBResponse.body,
+      'players tenant B page',
+    );
+    const playersTenantB = ensureArray(
+      playersTenantBPage.items,
       'players tenant B',
     );
     expect(playersTenantB).toHaveLength(0);
 
-    const categoriesTenantBResponse = await request(httpServer)
+    const categoriesTenantBResponse = await e2e(httpServer, 'tenancy')
       .get('/api/v1/categories')
-      .set(adminSession(tenantB))
+      .set(adminSession(clubBId))
       .expect(200);
+
+    // CategoriesController returns a raw array (not a PaginatedResult).
     const categoriesTenantB = ensureArray(
       categoriesTenantBResponse.body,
       'categories tenant B',
@@ -139,7 +140,7 @@ describe('Tenancy e2e', () => {
     const tenantA = 'club-a';
     const tenantB = 'club-b';
 
-    const clubAResponse = await request(httpServer)
+    const clubAResponse = await e2e(httpServer, 'tenancy')
       .post('/api/v1/clubs')
       .set(adminSession(tenantA))
       .send({ name: 'Club A2', slug: 'club-a2' })
@@ -147,13 +148,13 @@ describe('Tenancy e2e', () => {
     const clubABody = ensureRecord(clubAResponse.body, 'club response');
     const clubAId = ensureString(clubABody._id, 'club id');
 
-    await request(httpServer)
+    await e2e(httpServer, 'tenancy')
       .post('/api/v1/players')
       .set(adminSession(tenantB))
       .send({
         email: 'b@example.com',
         name: 'Rider B',
-        phone: '222',
+        phone: '2222222222',
         clubId: clubAId,
       })
       .expect(404);
@@ -163,7 +164,7 @@ describe('Tenancy e2e', () => {
     const tenantA = 'iso-a';
     const tenantB = 'iso-b';
 
-    const clubAResponse = await request(httpServer)
+    const clubAResponse = await e2e(httpServer, 'tenancy')
       .post('/api/v1/clubs')
       .set(adminSession(tenantA))
       .send({ name: 'Iso Club A', slug: 'iso-club-a' })
@@ -173,9 +174,9 @@ describe('Tenancy e2e', () => {
       'club a id',
     );
 
-    const playerResponse = await request(httpServer)
+    const playerResponse = await e2e(httpServer, 'tenancy')
       .post('/api/v1/players')
-      .set(adminSession(tenantA))
+      .set(adminSession(clubAId))
       .send({
         email: 'isolated@example.com',
         name: 'Isolated Player',
@@ -188,25 +189,26 @@ describe('Tenancy e2e', () => {
       'player id',
     );
 
-    await request(httpServer)
+    await e2e(httpServer, 'tenancy')
       .get(`/api/v1/players/${playerId}`)
       .set(adminSession(tenantB))
       .expect(404);
 
-    await request(httpServer)
+    // UpdatePlayerDto requires both name + phone, otherwise ValidationPipe returns 400.
+    await e2e(httpServer, 'tenancy')
       .put(`/api/v1/players/${playerId}`)
       .set(adminSession(tenantB))
-      .send({ name: 'Hacker' })
+      .send({ name: 'Hacker', phone: '11999999999' })
       .expect(404);
 
-    await request(httpServer)
+    await e2e(httpServer, 'tenancy')
       .delete(`/api/v1/players/${playerId}`)
       .set(adminSession(tenantB))
       .expect(404);
 
-    const allowed = await request(httpServer)
+    const allowed = await e2e(httpServer, 'tenancy')
       .get(`/api/v1/players/${playerId}`)
-      .set(adminSession(tenantA))
+      .set(adminSession(clubAId))
       .expect(200);
     expect(ensureRecord(allowed.body, 'player read').name).toBe(
       'Isolated Player',
@@ -217,7 +219,7 @@ describe('Tenancy e2e', () => {
     const tenantA = 'agg-a';
     const tenantB = 'agg-b';
 
-    const clubResponse = await request(httpServer)
+    const clubResponse = await e2e(httpServer, 'tenancy')
       .post('/api/v1/clubs')
       .set(adminSession(tenantA))
       .send({ name: 'Agg Club', slug: 'agg-club' })
@@ -227,9 +229,9 @@ describe('Tenancy e2e', () => {
       'agg club id',
     );
 
-    const playerA = await request(httpServer)
+    const playerA = await e2e(httpServer, 'tenancy')
       .post('/api/v1/players')
-      .set(adminSession(tenantA))
+      .set(adminSession(clubId))
       .send({
         email: 'agg-a@example.com',
         name: 'Agg Player A',
@@ -242,9 +244,9 @@ describe('Tenancy e2e', () => {
       'agg player a id',
     );
 
-    const playerB = await request(httpServer)
+    const playerB = await e2e(httpServer, 'tenancy')
       .post('/api/v1/players')
-      .set(adminSession(tenantA))
+      .set(adminSession(clubId))
       .send({
         email: 'agg-b@example.com',
         name: 'Agg Player B',
@@ -257,31 +259,31 @@ describe('Tenancy e2e', () => {
       'agg player b id',
     );
 
-    const categoryResponse = await request(httpServer)
+    const categoryResponse = await e2e(httpServer, 'tenancy')
       .post('/api/v1/categories')
-      .set(adminSession(tenantA))
+      .set(adminSession(clubId))
       .send({
         category: 'AGG',
         description: 'Aggregate',
         clubId,
-        events: [],
+        events: [{ name: 'Win', operation: '+', value: 10 }],
       })
       .expect(201);
     const category = ensureRecord(categoryResponse.body, 'agg category');
     const categoryId = ensureString(category._id, 'agg category id');
 
-    await request(httpServer)
+    await e2e(httpServer, 'tenancy')
       .post(`/api/v1/categories/AGG/players/${playerAId}`)
-      .set(adminSession(tenantA))
+      .set(adminSession(clubId))
       .expect(201);
-    await request(httpServer)
+    await e2e(httpServer, 'tenancy')
       .post(`/api/v1/categories/AGG/players/${playerBId}`)
-      .set(adminSession(tenantA))
+      .set(adminSession(clubId))
       .expect(201);
 
-    await request(httpServer)
+    await e2e(httpServer, 'tenancy')
       .post('/api/v1/matches')
-      .set(adminSession(tenantA))
+      .set(adminSession(clubId))
       .send({
         categoryId,
         clubId,
@@ -306,27 +308,16 @@ describe('Tenancy e2e', () => {
       })
       .expect(201);
 
-    const rankingResponse = await request(httpServer)
+    const rankingResponse = await e2e(httpServer, 'tenancy')
       .get(`/api/v1/matches/ranking/${categoryId}`)
-      .set(adminSession(tenantA))
+      .set(adminSession(clubId))
       .expect(200);
     const rankingBody = ensureRecord(rankingResponse.body, 'ranking body');
     expect(Array.isArray(rankingBody.items)).toBe(true);
 
-    await request(httpServer)
+    await e2e(httpServer, 'tenancy')
       .get(`/api/v1/matches/ranking/${categoryId}`)
       .set(adminSession(tenantB))
       .expect(404);
   });
 });
-
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value && typeof value === 'object');
-
-const loadAppModule = (): AppModuleImport => {
-  const moduleValue = require('../src/app.module') as unknown;
-  if (!isObject(moduleValue) || !('AppModule' in moduleValue)) {
-    throw new Error('Failed to load AppModule');
-  }
-  return moduleValue as AppModuleImport;
-};

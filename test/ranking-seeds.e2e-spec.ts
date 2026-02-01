@@ -1,15 +1,18 @@
 import { INestApplication } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
+import type { TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { AppModule } from '../src/app.module';
+
 import { MatchesService } from '../src/matches/matches.service';
 import { tenancyContext } from '../src/tenancy/tenancy.context';
 import { Club } from '../src/clubs/interfaces/club.interface';
 import { Player } from '../src/players/interfaces/players.interface';
 import { Category } from '../src/categories/interfaces/category.interface';
+import { Match } from '../src/matches/interfaces/match.interface';
 import { Roles } from '../src/auth/roles';
+import type { AccessContext } from '../src/auth/access-context.types';
+import { createE2EApp } from './utils/create-e2e-app';
 
 const TENANT = 'seed-tenant';
 
@@ -50,12 +53,9 @@ describe('Ranking integration seeds', () => {
     process.env.BETTER_AUTH_SECRET = 'integration-secret-32-chars';
     process.env.BETTER_AUTH_URL = 'http://localhost:3000';
 
-    moduleFixture = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleFixture.createNestApplication();
-    await app.init();
+    const e2eApp = await createE2EApp();
+    moduleFixture = e2eApp.moduleRef;
+    app = e2eApp.app;
 
     matchesService = app.get(MatchesService);
     clubModel = app.get(getModelToken('Club'));
@@ -97,16 +97,27 @@ describe('Ranking integration seeds', () => {
       },
     ];
 
-    await matchesService.createMatch({
+    const context: AccessContext = {
+      userId: 'e2e-user',
+      role: Roles.SYSTEM_ADMIN,
+      tenantId: TENANT,
       clubId,
-      categoryId,
-      format: 'SINGLES',
-      bestOf: 3,
-      decidingSetType: 'STANDARD',
-      teams: [{ players: [playerA] }, { players: [playerB] }],
-      sets,
-      playedAt,
-    });
+    };
+
+    await matchesService.createMatch(
+      {
+        tenant: TENANT,
+        clubId,
+        categoryId,
+        format: 'SINGLES',
+        bestOf: 3,
+        decidingSetType: 'STANDARD',
+        teams: [{ players: [playerA] }, { players: [playerB] }],
+        sets,
+        playedAt,
+      } as unknown as Parameters<typeof matchesService.createMatch>[0],
+      context,
+    );
   };
 
   const createDoublesMatch = async (
@@ -131,16 +142,27 @@ describe('Ranking integration seeds', () => {
       },
     ];
 
-    await matchesService.createMatch({
+    const context: AccessContext = {
+      userId: 'e2e-user',
+      role: Roles.SYSTEM_ADMIN,
+      tenantId: TENANT,
       clubId,
-      categoryId,
-      format: 'DOUBLES',
-      bestOf: 3,
-      decidingSetType: 'STANDARD',
-      teams: [{ players: teamA }, { players: teamB }],
-      sets,
-      playedAt,
-    });
+    };
+
+    await matchesService.createMatch(
+      {
+        tenant: TENANT,
+        clubId,
+        categoryId,
+        format: 'DOUBLES',
+        bestOf: 3,
+        decidingSetType: 'STANDARD',
+        teams: [{ players: teamA }, { players: teamB }],
+        sets,
+        playedAt,
+      } as unknown as Parameters<typeof matchesService.createMatch>[0],
+      context,
+    );
   };
 
   const seedData = async () => {
@@ -285,7 +307,10 @@ describe('Ranking integration seeds', () => {
         clubId: otherClub._id,
         ranking: 1500,
       });
-      await matchModel.create({
+      const matchModelUnsafe = matchModel as unknown as {
+        create: (doc: unknown) => Promise<unknown>;
+      };
+      await matchModelUnsafe.create({
         tenant: TENANT,
         categoryId: categoryAId,
         clubId: otherClub._id,
@@ -335,8 +360,9 @@ describe('Ranking integration seeds', () => {
     expect(ranking.total).toBe(6);
     expect(ranking.items).toHaveLength(6);
     expect(ranking.items[0].name).toBe('Player 1');
-    expect(ranking.items[0].points).toBe(40);
-    expect(ranking.items[0].rating).toBe(40);
+    // Current scoring rules: WIN=10, DRAW=5, LOSS=0.
+    expect(ranking.items[0].points).toBe(30);
+    expect(ranking.items[0].rating).toBe(30);
     expect(ranking.items[0].wins).toBeGreaterThan(0);
     expect(ranking.items[ranking.items.length - 1].name).toBe('Player 6');
     expect(ranking.items[ranking.items.length - 1].points).toBe(0);

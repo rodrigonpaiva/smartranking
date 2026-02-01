@@ -54,6 +54,9 @@ export class CategoriesService {
       ...createCategoryDto,
       clubId: targetClubId,
       isDoubles,
+      // Make tenant explicit on writes; avoids relying on AsyncLocalStorage
+      // propagation into Mongoose hooks during tests.
+      tenant: context.tenantId ?? undefined,
     });
     const categoryCreated = await createdCategory.save();
     this.auditService.audit(AuditEvent.CATEGORY_CREATED, context, {
@@ -201,9 +204,12 @@ export class CategoriesService {
       );
     }
 
-    categoryFound.players.push(playerId);
+    // Avoid passing the full document back into $set (includes immutable tenant).
     await this.categoryModel
-      .findOneAndUpdate({ category }, { $set: categoryFound })
+      .updateOne(
+        { _id: categoryFound._id },
+        { $addToSet: { players: playerId } },
+      )
       .exec();
     this.auditService.audit(AuditEvent.CATEGORY_UPDATED, context, {
       targetIds: [categoryFound._id?.toString() ?? category],

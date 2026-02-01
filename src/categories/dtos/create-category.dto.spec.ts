@@ -1,6 +1,9 @@
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
-import { CreateCategoryDto, CategoryEventDto } from '../dto/cretae-categorie.dto';
+import {
+  CreateCategoryDto,
+  CategoryEventDto,
+} from '../dto/cretae-categorie.dto';
 
 describe('CreateCategoryDto', () => {
   const validObjectId = '507f1f77bcf86cd799439011';
