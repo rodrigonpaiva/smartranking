@@ -60,3 +60,6 @@ AGENTS.md
 
 # Docker
 docker-compose.yml
+
+# External repos / local checkouts
+/web/
