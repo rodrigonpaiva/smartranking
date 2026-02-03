@@ -555,24 +555,15 @@ async function ensureCategories(
       .findOne({ category: definition.code })
       .exec();
     if (!category) {
-      const created = await categoryModel
-        .findOneAndUpdate(
-          { category: definition.code },
-          {
-            $setOnInsert: {
-              category: definition.code,
-              description: definition.description,
-              clubId: clubObjectId,
-              players: [],
-              tenant: tenantId,
-            },
-          },
-          { upsert: true, new: true, setDefaultsOnInsert: true },
-        )
-        .exec();
-      if (created) {
-        categories[definition.code] = created;
-      }
+      // Avoid upsert updates that include tenant, because tenancy plugin enforces tenant immutability.
+      const created = new categoryModel({
+        category: definition.code,
+        description: definition.description,
+        clubId: clubObjectId,
+        players: [],
+        tenant: tenantId,
+      });
+      categories[definition.code] = await created.save();
       continue;
     }
 
