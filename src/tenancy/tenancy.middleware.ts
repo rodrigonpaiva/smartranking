@@ -19,10 +19,27 @@ export class TenancyMiddleware implements NestMiddleware {
   private static options: TenancyModuleOptions = {};
 
   use(req: Request, res: Response, next: () => void): void {
+    // Better Auth endpoints are tenantless.
     if (req.path?.startsWith('/api/auth')) {
       next();
       return;
     }
+
+    // Tenantless endpoints (bootstrapping/public/health). These routes must work
+    // before a tenant is selected and must not be scoped by the tenancy plugin.
+    if (this.isTenantlessPath(req.path)) {
+      req.tenantId = undefined;
+      tenancyContext.run(
+        {
+          tenant: undefined,
+          allowMissingTenant: true,
+          disableTenancy: true,
+        },
+        next,
+      );
+      return;
+    }
+
     const headerName = (
       this.options.headerName ?? TENANCY_HEADER_NAME
     ).toLowerCase();
@@ -60,5 +77,14 @@ export class TenancyMiddleware implements NestMiddleware {
       return headerValue;
     }
     return undefined;
+  }
+
+  private isTenantlessPath(path?: string): boolean {
+    if (!path) return false;
+    if (path === '/health' || path === '/ready') return true;
+    if (path === '/api/v1/users/me') return true;
+    if (path === '/api/v1/clubs/public') return true;
+    if (path === '/api/v1/clubs/register') return true;
+    return false;
   }
 }

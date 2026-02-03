@@ -12,7 +12,7 @@ SmartRanking enforces multiple layers of protection:
   - DTOs rely on `class-validator`.
   - `ValidationParamPipe` trims/limits route parameters and rejects unsafe characters, preventing operator injections in IDs.
 - **Transport security**: CORS is limited to the Better Auth origin and the local club dashboard. HSTS headers encourage HTTPS-only access in production.
-- **Dependency scanning**: the CI build step runs `npm audit --production` on every PR/push to catch known vulnerabilities in runtime dependencies.
+- **Dependency scanning**: the CI build step runs `npm audit --omit=dev --audit-level=high` on every PR/push to catch known vulnerabilities in runtime dependencies (blocking only high/critical issues).
 - **Observability**: structured request logs include requestId, tenant, userId, route, and duration to support incident response. Domain events log match creation/confirmation and ranking rebuilds for auditing.
 
 Refer to `docs/tenancy-model.md` for tenancy specifics and `docs/ranking-system.md` for the deterministic ranking rules.
